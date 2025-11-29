@@ -67,12 +67,12 @@ const Upload = () => {
   };
 
   const openaiVoices = [
-    { id: "alloy", name: "Alloy", description: "Neutral and balanced" },
-    { id: "echo", name: "Echo", description: "Male, clear and direct" },
-    { id: "fable", name: "Fable", description: "Warm and engaging" },
-    { id: "onyx", name: "Onyx", description: "Deep and authoritative" },
-    { id: "nova", name: "Nova", description: "Female, energetic" },
-    { id: "shimmer", name: "Shimmer", description: "Soft and gentle" },
+    { id: "alloy", name: "Alex Sterling", description: "by voicemaster.apt" },
+    { id: "echo", name: "Luna Rivers", description: "by audioqueen.apt" },
+    { id: "fable", name: "Marcus Deep", description: "by basstone.apt" },
+    { id: "onyx", name: "Aria Voice", description: "by crystalclear.apt" },
+    { id: "nova", name: "Zen Master  ", description: "by calmvoice.apt" },
+    { id: "shimmer", name: "Ember Spark", description: "by firetalker.apt" },
   ];
 
   // ---------- OPENAI TEXT TO SPEECH ----------
@@ -172,8 +172,8 @@ const Upload = () => {
             {/* ---------- OPENAI TTS CARD ---------- */}
             <Card className="glass-card">
               <CardHeader>
-                <CardTitle>Text-to-Speech</CardTitle>
-                <CardDescription>Generate audio from text using OpenAI</CardDescription>
+                <CardTitle>Try models!</CardTitle>
+                <CardDescription>Generate audio from text</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <Select value={openaiVoice} onValueChange={setOpenaiVoice}>
