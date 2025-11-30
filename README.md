@@ -4,6 +4,37 @@
 
 VoiceVault is a decentralized platform for creating, owning, and monetizing AI voice models. Upload your voice, train custom AI models, and trade voice NFTs on the Aptos blockchain.
 
+## 🚀 Quick Start
+
+**New to VoiceVault?** Start here:
+1. 📋 [STARTUP_CHECKLIST.md](./docs/STARTUP_CHECKLIST.md) - Get up and running in 5 minutes
+2. 🧪 [MOCK_TESTING_GUIDE.md](./docs/MOCK_TESTING_GUIDE.md) - **Test with mock voices (recommended first!)**
+3. 🧪 [TESTING_GUIDE.md](./docs/TESTING_GUIDE.md) - Full testing procedures
+4. 📚 [INTEGRATION_GUIDE.md](./docs/INTEGRATION_GUIDE.md) - Understand the architecture
+5. ⚡ [QUICK_REFERENCE.md](./docs/QUICK_REFERENCE.md) - Common operations reference
+
+## 📊 Project Status
+
+✅ **Smart Contracts**: Deployed on Aptos Testnet  
+✅ **Frontend**: Fully integrated with blockchain  
+✅ **Wallet**: Aptos wallet adapter configured  
+✅ **AI/ML**: OpenAI TTS + Gradio voice cloning  
+⚠️ **Production**: Needs IPFS integration & event indexing
+
+See [CURRENT_STATUS.md](./docs/CURRENT_STATUS.md) for detailed status and roadmap.
+
+## 🧪 Testing with Mock Data
+
+The marketplace includes **6 mock voices** for testing the payment flow:
+- ✅ No need to register voices first
+- ✅ Test real blockchain transactions
+- ✅ Verify payment splits work correctly
+- ✅ Practice the full user journey
+
+**Just connect your wallet and go to the Marketplace!** Mock voices appear automatically.
+
+See [MOCK_TESTING_GUIDE.md](./docs/MOCK_TESTING_GUIDE.md) for details.
+
 ## ✨ Features
 
 ### 🎤 Voice Studio

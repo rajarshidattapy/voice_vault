@@ -1,5 +1,7 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { VoiceRegistrationForm } from "@/components/voice/VoiceRegistrationForm";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -172,6 +174,15 @@ const Upload = () => {
         <Navbar />
         <main className="pt-24 pb-16">
           <div className="container mx-auto px-4 max-w-5xl space-y-10">
+            
+            {/* Voice Registration Section */}
+            <div className="mb-8">
+              <VoiceRegistrationForm />
+            </div>
+
+            <div className="border-t pt-8">
+              <h2 className="text-2xl font-bold mb-6">Test Voice Models</h2>
+            </div>
 
             {/* ---------- OPENAI TTS CARD ---------- */}
             <Card className="glass-card">
