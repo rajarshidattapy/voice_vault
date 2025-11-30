@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Play, Shield, Zap } from "lucide-react";
+import { ArrowRight, Play, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import heroWaves from "@/assets/freq.mp4";
 
@@ -25,7 +25,7 @@ export function HeroSection() {
         <div className="max-w-4xl mx-auto text-center">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8 animate-fade-in">
-            <Shield className="h-4 w-4 text-primary" />
+            <img src="/aptos.jpeg" alt="Aptos" className="h-5 w-5 rounded-full object-cover" />
             <span className="text-sm font-medium text-primary">Powered by Aptos</span>
           </div>
 

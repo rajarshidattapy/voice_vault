@@ -73,8 +73,8 @@ export function Navbar() {
             <div className="relative">
               <div className="absolute inset-0 bg-primary/30 blur-xl rounded-full group-hover:bg-primary/50 transition-all duration-300" />
               <img
-                src="/aptos.jpeg"
-                alt="Aptos Logo"
+                src="/logo.png"
+                alt="VoiceVault Logo"
                 className="relative h-10 w-10 rounded-full object-cover"
               />
             </div>
@@ -90,8 +90,8 @@ export function Navbar() {
                 key={link.href}
                 to={link.href}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${location.pathname === link.href
-                    ? "text-primary bg-primary/10"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                  ? "text-primary bg-primary/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
                   }`}
               >
                 {link.label}
@@ -175,8 +175,8 @@ export function Navbar() {
                   to={link.href}
                   onClick={() => setMobileMenuOpen(false)}
                   className={`px-4 py-3 rounded-lg text-sm font-medium transition-all duration-300 ${location.pathname === link.href
-                      ? "text-primary bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                    ? "text-primary bg-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
                     }`}
                 >
                   {link.label}
