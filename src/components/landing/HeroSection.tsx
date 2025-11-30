@@ -1,19 +1,22 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Play, Shield, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
-import heroWaves from "@/assets/aptos.webp";
+import heroWaves from "@/assets/freq.mp4";
 
 export function HeroSection() {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
       {/* Background Effects */}
       <div className="absolute inset-0">
-        <img
+        <video
           src={heroWaves}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover opacity-20"
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover opacity-50"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/90 via-background/70 to-background" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/40 to-background/80" />
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/30 rounded-full blur-[128px] animate-pulse-glow" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/20 rounded-full blur-[128px] animate-pulse-glow" style={{ animationDelay: '1s' }} />
       </div>
@@ -41,7 +44,7 @@ export function HeroSection() {
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16 animate-slide-up" style={{ animationDelay: '0.2s' }}>
             <Link to="/upload">
-              <Button variant="gradient" size="xl">
+              <Button variant="default" size="xl">
                 Create Your Voice
                 <ArrowRight className="h-5 w-5" />
               </Button>

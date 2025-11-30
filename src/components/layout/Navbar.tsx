@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Mic2, Menu, X, Wallet, LogOut, Copy, Check } from "lucide-react";
+import { Menu, X, Wallet, LogOut, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { useWallet } from "@/hooks/use-wallet";
 import { toast } from "sonner";
@@ -27,29 +27,26 @@ export function Navbar() {
   const [copied, setCopied] = useState(false);
   const { connected, account, connect, disconnect } = useWallet();
 
-  const walletAddress = account?.address?.toString() || '';
+  const walletAddress = account?.address?.toString() || "";
 
   const handleCopyAddress = () => {
-    if (walletAddress) {
-      navigator.clipboard.writeText(walletAddress);
-      setCopied(true);
-      toast.success('Address copied to clipboard');
-      setTimeout(() => setCopied(false), 2000);
-    }
+    if (!walletAddress) return;
+    navigator.clipboard.writeText(walletAddress);
+    setCopied(true);
+    toast.success("Address copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleConnect = async () => {
     try {
-      await connect('Petra');
-      toast.success('Wallet Connected', {
-        description: 'Successfully connected to Petra wallet',
+      await connect("Petra");
+      toast.success("Wallet Connected", {
+        description: "Successfully connected to Petra wallet",
       });
     } catch (error) {
-      console.error('Connection error:', error);
+      console.error("Connection error:", error);
       if (error instanceof Error) {
-        toast.error('Connection Failed', {
-          description: error.message,
-        });
+        toast.error("Connection Failed", { description: error.message });
       }
     }
   };
@@ -57,57 +54,69 @@ export function Navbar() {
   const handleDisconnect = async () => {
     try {
       await disconnect();
-      toast.success('Wallet Disconnected');
+      toast.success("Wallet Disconnected");
     } catch (error) {
-      console.error('Disconnection error:', error);
+      console.error("Disconnection error:", error);
       if (error instanceof Error) {
-        toast.error('Disconnection Failed', {
-          description: error.message,
-        });
+        toast.error("Disconnection Failed", { description: error.message });
       }
     }
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-      <div className="container mx-auto px-4">
-        <div className="flex h-16 items-center justify-between">
+    <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[94%] md:w-[88%] lg:w-[82%]">
+      {/* Floating blurred container */}
+      <div className="rounded-2xl border border-white/10 bg-background/40 backdrop-blur-2xl shadow-[0_8px_30px_rgb(0,0,0,0.25)] transition-all duration-300 hover:shadow-[0_8px_40px_rgba(0,0,0,0.45)]">
+        <div className="px-6 md:px-8 flex h-20 items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 group">
             <div className="relative">
               <div className="absolute inset-0 bg-primary/30 blur-xl rounded-full group-hover:bg-primary/50 transition-all duration-300" />
-              <img 
-                src="/aptos.jpeg" 
-                alt="Aptos Logo" 
+              <img
+                src="/aptos.jpeg"
+                alt="Aptos Logo"
                 className="relative h-10 w-10 rounded-full object-cover"
               />
             </div>
-            <span className="font-display text-xl font-bold gradient-text">VoiceVault</span>
+            <span className="font-display text-xl font-bold gradient-text">
+              VoiceVault
+            </span>
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-5">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 to={link.href}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
-                  location.pathname === link.href
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${location.pathname === link.href
                     ? "text-primary bg-primary/10"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                  }`}
               >
                 {link.label}
               </Link>
             ))}
           </div>
 
-          {/* Wallet Button */}
-          <div className="hidden md:flex items-center gap-3">
+          {/* Right Section */}
+          <div className="hidden md:flex items-center gap-7">
+            {/* PAT / OFF badge */}
+            <div className="px-4 py-2 rounded-full bg-black/30 border border-white/10 backdrop-blur-md flex items-center gap-3 text-xs font-semibold shadow-inner">
+              <span className="text-yellow-400">0 PAT</span>
+              <span className="opacity-50">|</span>
+              <span className="text-green-400">0% OFF</span>
+            </div>
+
+            {/* Wallet */}
             {connected && walletAddress ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="gradient" size="default" className="flex items-center gap-2">
+                  <Button
+                    variant="gradient"
+                    size="default"
+                    className="flex items-center gap-2 shadow-[0_0_12px_rgba(255,80,80,0.45)] hover:shadow-[0_0_18px_rgba(255,80,80,0.65)] transition-shadow"
+                  >
                     <Wallet className="h-4 w-4" />
                     {formatAddress(walletAddress)}
                   </Button>
@@ -115,7 +124,7 @@ export function Navbar() {
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>My Wallet</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     className="font-mono text-xs cursor-pointer"
                     onClick={handleCopyAddress}
                   >
@@ -125,18 +134,21 @@ export function Navbar() {
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleDisconnect} className="text-destructive cursor-pointer">
+                  <DropdownMenuItem
+                    onClick={handleDisconnect}
+                    className="text-destructive cursor-pointer"
+                  >
                     <LogOut className="mr-2 h-4 w-4" />
                     Disconnect
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button 
-                variant="gradient" 
-                size="default" 
+              <Button
+                variant="gradient"
+                size="default"
                 onClick={handleConnect}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 shadow-[0_0_12px_rgba(255,80,80,0.45)] hover:shadow-[0_0_18px_rgba(255,80,80,0.65)] transition-shadow"
               >
                 <Wallet className="h-4 w-4" />
                 Connect Petra
@@ -146,33 +158,33 @@ export function Navbar() {
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden p-2 rounded-lg hover:bg-muted transition-colors"
+            className="md:hidden p-2 rounded-lg hover:bg-muted/40 transition-colors"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
         </div>
 
-        {/* Mobile Navigation */}
+        {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 border-t border-border/50">
+          <div className="md:hidden py-4 border-t border-white/10 bg-black/40 backdrop-blur-xl rounded-b-2xl">
             <div className="flex flex-col gap-2">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   to={link.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-all duration-300 ${
-                    location.pathname === link.href
+                  className={`px-4 py-3 rounded-lg text-sm font-medium transition-all duration-300 ${location.pathname === link.href
                       ? "text-primary bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  }`}
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                    }`}
                 >
                   {link.label}
                 </Link>
               ))}
-              <Button 
-                variant="gradient" 
+
+              <Button
+                variant="gradient"
                 className="mt-2 flex items-center gap-2"
                 onClick={connected ? handleDisconnect : handleConnect}
               >

@@ -11,8 +11,10 @@ import { useState, useRef } from "react";
 import { Helmet } from "react-helmet-async";
 import { toast } from "sonner";
 import { Client } from "@gradio/client";
+import { useRewards } from "@/contexts/RewardsContext";
 
 const Upload = () => {
+  const { logEvent } = useRewards();
   // ---------- OpenAI TTS ----------
   const [openaiText, setOpenaiText] = useState("");
   const [openaiVoice, setOpenaiVoice] = useState("alloy");
@@ -103,6 +105,7 @@ const Upload = () => {
       const blob = await response.blob();
       setOpenaiAudioUrl(URL.createObjectURL(blob));
       toast.success("Audio generated successfully!");
+      await logEvent("TTS_GENERATED");
     } catch (err) {
       toast.error("OpenAI Error", { description: err instanceof Error ? err.message : "Unknown error" });
     } finally {
@@ -146,6 +149,7 @@ const Upload = () => {
       document.body.removeChild(a);
 
       toast.success("Voice clone generated!");
+      await logEvent("VOICE_CLONED");
     } catch (err) {
       toast.error("Voice cloning error", { description: err instanceof Error ? err.message : "Unknown error" });
     } finally {
@@ -186,7 +190,7 @@ const Upload = () => {
                 <Textarea value={openaiText} onChange={(e) => setOpenaiText(e.target.value)}
                   placeholder="Enter text to convert to speech..." className="min-h-[150px]" />
 
-                <Button onClick={handleOpenAITTS} disabled={openaiLoading} className="w-full" size="lg" variant="gradient">
+                <Button onClick={handleOpenAITTS} disabled={openaiLoading} className="w-full" size="lg" variant="default">
                   {openaiLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Generating…</>
                     : <><Sparkles className="h-5 w-5" /> Generate Speech</>}
                 </Button>
@@ -213,7 +217,7 @@ const Upload = () => {
                 {/* Microphone */}
                 <div className="border-2 border-dashed border-border rounded-xl p-8 text-center space-y-4">
                   {!recording ? (
-                    <Button onClick={startRecording} className="w-full" variant="gradient">
+                    <Button onClick={startRecording} className="w-full" variant="default">
                       🎤 Start Recording
                     </Button>
                   ) : (
@@ -243,7 +247,7 @@ const Upload = () => {
                   <SelectContent><SelectItem value="true">true</SelectItem><SelectItem value="false">false</SelectItem></SelectContent>
                 </Select>
 
-                <Button onClick={handleVoiceClone} disabled={cloneLoading} className="w-full" size="lg" variant="gradient">
+                <Button onClick={handleVoiceClone} disabled={cloneLoading} className="w-full" size="lg" variant="default">
                   {cloneLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Cloning…</>
                     : <><Mic2 className="h-5 w-5" /> Clone With Recorded Voice</>}
                 </Button>

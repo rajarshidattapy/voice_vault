@@ -15,7 +15,7 @@ const NotFound = () => {
       {/* Background Effects */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-[128px]" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-[128px]" />
-      
+
       <div className="text-center relative z-10 px-4">
         <h1 className="font-display text-8xl md:text-9xl font-bold gradient-text mb-4">404</h1>
         <p className="text-xl md:text-2xl text-muted-foreground mb-8">
@@ -23,7 +23,7 @@ const NotFound = () => {
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to="/">
-            <Button variant="gradient" size="lg">
+            <Button variant="default" size="lg">
               <Home className="h-5 w-5" />
               Back to Home
             </Button>

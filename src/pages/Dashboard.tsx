@@ -90,7 +90,7 @@ const Dashboard = () => {
                 </p>
               </div>
               <Link to="/upload">
-                <Button variant="gradient">
+                <Button variant="default">
                   <Plus className="h-5 w-5" />
                   Create New Voice
                 </Button>
@@ -143,9 +143,8 @@ const Dashboard = () => {
                         <p className="text-sm font-medium">{activity.voice}</p>
                         <p className="text-xs text-muted-foreground">{activity.time}</p>
                       </div>
-                      <span className={`text-sm font-semibold ${
-                        activity.type === 'payout' ? 'text-green-500' : 'text-primary'
-                      }`}>
+                      <span className={`text-sm font-semibold ${activity.type === 'payout' ? 'text-green-500' : 'text-primary'
+                        }`}>
                         +{activity.amount} APT
                       </span>
                     </div>
@@ -179,11 +178,10 @@ const Dashboard = () => {
                       <div>
                         <h4 className="font-semibold">{voice.name}</h4>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className={`px-2 py-0.5 text-xs rounded-full ${
-                            voice.status === 'active' 
-                              ? 'bg-green-500/20 text-green-500' 
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${voice.status === 'active'
+                              ? 'bg-green-500/20 text-green-500'
                               : 'bg-yellow-500/20 text-yellow-500'
-                          }`}>
+                            }`}>
                             {voice.status}
                           </span>
                           <span className="text-sm text-muted-foreground">

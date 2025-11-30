@@ -25,9 +25,9 @@ export const WalletConnectButton = () => {
   if (connected) return null;
 
   return (
-    <Button 
-      variant="gradient" 
-      size="default" 
+    <Button
+      variant="default"
+      size="default"
       onClick={handleConnect}
       className="flex items-center gap-2"
     >
