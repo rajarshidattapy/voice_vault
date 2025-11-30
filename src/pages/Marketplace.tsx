@@ -119,6 +119,18 @@ const Marketplace = () => {
     setSelectedVoice(voice);
     setPaymentTxHash(txHash);
     
+    // Track purchased voice
+    const { addPurchasedVoice } = await import("@/lib/purchasedVoices");
+    addPurchasedVoice({
+      voiceId: voice.voiceId,
+      name: voice.name,
+      modelUri: voice.modelUri,
+      owner: voice.owner,
+      price: voice.pricePerUse,
+      purchasedAt: Date.now(),
+      txHash: txHash,
+    });
+    
     // Award PAT token for successful payment
     await logEvent("VOICE_PURCHASED", {
       voiceName: voice.name,

@@ -1,40 +1,59 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { VoiceRegistrationForm } from "@/components/voice/VoiceRegistrationForm";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Sparkles, Download, Loader2, Mic2, Upload as UploadIcon } from "lucide-react";
-import { useState, useRef } from "react";
+import { Sparkles, Download, Loader2, Mic2, ShoppingBag } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { toast } from "sonner";
 import { Client } from "@gradio/client";
 import { useRewards } from "@/contexts/RewardsContext";
+import { getPurchasedOpenAIVoices } from "@/lib/purchasedVoices";
 
 const Upload = () => {
   const { logEvent } = useRewards();
-  // ---------- OpenAI TTS ----------
+  const [purchasedVoices, setPurchasedVoices] = useState<any[]>([]);
+
+  // ---------- OPENAI TTS ----------
   const [openaiText, setOpenaiText] = useState("");
   const [openaiVoice, setOpenaiVoice] = useState("alloy");
   const [openaiLoading, setOpenaiLoading] = useState(false);
   const [openaiAudioUrl, setOpenaiAudioUrl] = useState<string | null>(null);
 
-  // ---------- Voice Cloning ----------
+  // ---------- VOICE CLONING ----------
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [cloneLoading, setCloneLoading] = useState(false);
   const [cloneText, setCloneText] = useState("");
   const [clonedUrl, setClonedUrl] = useState<string | null>(null);
 
-  // ---------- Extra Parameter Inputs ----------
-  const [exaggeration, setExaggeration] = useState("0.5");
-  const [temperature, setTemperature] = useState("0.8");
-  const [seed, setSeed] = useState("0");
-  const [cfgw, setCfgw] = useState("0.5");
-  const [vadTrim, setVadTrim] = useState("false");
+  // Load purchased voices on mount
+  useEffect(() => {
+    const purchased = getPurchasedOpenAIVoices();
+    setPurchasedVoices(purchased);
+    console.log("[Upload] Loaded purchased voices:", purchased);
+  }, []);
+
+  // Map purchased voices to dropdown format
+  const availableVoices = purchasedVoices.length > 0
+    ? purchasedVoices.map((v) => ({
+      id: v.modelUri.replace("openai:", ""),
+      name: v.name,
+      description: `Purchased for ${v.price} APT`,
+    }))
+    : [
+      // Default voices if none purchased (for testing)
+      { id: "alloy", name: "Alex Sterling", description: "Demo voice" },
+      { id: "echo", name: "Luna Rivers", description: "Demo voice" },
+      { id: "fable", name: "Marcus Deep", description: "Demo voice" },
+      { id: "onyx", name: "Aria Voice", description: "Demo voice" },
+      { id: "nova", name: "Zen Master", description: "Demo voice" },
+      { id: "shimmer", name: "Ember Spark", description: "Demo voice" },
+    ];
 
   // ---------- Microphone recording ----------
   const [recording, setRecording] = useState(false);
@@ -70,14 +89,14 @@ const Upload = () => {
     toast.info("Recording stopped");
   };
 
-  const openaiVoices = [
-    { id: "alloy", name: "Alex Sterling", description: "by voicemaster.apt" },
-    { id: "echo", name: "Luna Rivers", description: "by audioqueen.apt" },
-    { id: "fable", name: "Marcus Deep", description: "by basstone.apt" },
-    { id: "onyx", name: "Aria Voice", description: "by crystalclear.apt" },
-    { id: "nova", name: "Zen Master  ", description: "by calmvoice.apt" },
-    { id: "shimmer", name: "Ember Spark", description: "by firetalker.apt" },
-  ];
+  // Load purchased voices on mount
+  useEffect(() => {
+    const purchased = getPurchasedOpenAIVoices();
+    setPurchasedVoices(purchased);
+    console.log("[Upload] Loaded purchased voices:", purchased);
+  }, []);
+
+
 
   // ---------- OPENAI TEXT TO SPEECH ----------
   const handleOpenAITTS = async () => {
@@ -106,6 +125,7 @@ const Upload = () => {
       if (!response.ok) throw new Error("TTS request failed");
       const blob = await response.blob();
       setOpenaiAudioUrl(URL.createObjectURL(blob));
+
       toast.success("Audio generated successfully!");
       await logEvent("TTS_GENERATED");
     } catch (err) {
@@ -115,7 +135,7 @@ const Upload = () => {
     }
   };
 
-  // ---------- VOICE CLONING ----------
+  // ---------- NEW VOICE CLONE ----------
   const handleVoiceClone = async () => {
     if (!selectedFile) {
       toast.error("Record your voice first");
@@ -128,27 +148,20 @@ const Upload = () => {
 
     setCloneLoading(true);
     try {
-      const client = await Client.connect("ResembleAI/Chatterbox");
-      const result = await client.predict("/generate_tts_audio", {
-        text_input: cloneText,
-        audio_prompt_path_input: selectedFile,
-        exaggeration_input: Number(exaggeration),
-        temperature_input: Number(temperature),
-        seed_num_input: Number(seed),
-        cfgw_input: Number(cfgw),
-        vad_trim_input: vadTrim === "true",
+      const client = await Client.connect("tonyassi/voice-clone");
+
+      const result = await client.predict("/predict", {
+        text: cloneText,
+        audio: selectedFile,
       });
 
       const audio = result.data[0];
       setClonedUrl(audio.url);
 
-      // Auto-download
       const a = document.createElement("a");
       a.href = audio.url;
       a.download = `voiceclone-${Date.now()}.wav`;
-      document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
 
       toast.success("Voice clone generated!");
       await logEvent("VOICE_CLONED");
@@ -174,8 +187,7 @@ const Upload = () => {
         <Navbar />
         <main className="pt-32 pb-16">
           <div className="container mx-auto px-4 max-w-5xl space-y-10">
-            
-            {/* Voice Registration Section */}
+
             <div className="mb-8">
               <VoiceRegistrationForm />
             </div>
@@ -187,21 +199,48 @@ const Upload = () => {
             {/* ---------- OPENAI TTS CARD ---------- */}
             <Card className="glass-card">
               <CardHeader>
-                <CardTitle>Try models!</CardTitle>
-                <CardDescription>Generate audio from text</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  Try Models
+                  {purchasedVoices.length > 0 && (
+                    <span className="text-sm font-normal text-muted-foreground">
+                      ({purchasedVoices.length} purchased)
+                    </span>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  {purchasedVoices.length > 0
+                    ? "Generate audio with your purchased voices"
+                    : "Purchase voices from the marketplace to use them here"}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {purchasedVoices.length === 0 && (
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 flex items-start gap-3">
+                    <ShoppingBag className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-semibold text-blue-500 mb-1">No voices purchased yet</p>
+                      <p className="text-muted-foreground">
+                        Visit the Marketplace to purchase voices. Once purchased, they'll appear here for you to use.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <Select value={openaiVoice} onValueChange={setOpenaiVoice}>
                   <SelectTrigger><SelectValue placeholder="Choose a voice..." /></SelectTrigger>
                   <SelectContent>
-                    {openaiVoices.map(v => <SelectItem key={v.id} value={v.id}>{v.name} — {v.description}</SelectItem>)}
+                    {availableVoices.map(v => <SelectItem key={v.id} value={v.id}>{v.name} — {v.description}</SelectItem>)}
                   </SelectContent>
                 </Select>
 
-                <Textarea value={openaiText} onChange={(e) => setOpenaiText(e.target.value)}
-                  placeholder="Enter text to convert to speech..." className="min-h-[150px]" />
+                <Textarea
+                  value={openaiText}
+                  onChange={(e) => setOpenaiText(e.target.value)}
+                  placeholder="Enter text to convert to speech..."
+                  className="min-h-[150px]"
+                />
 
-                <Button onClick={handleOpenAITTS} disabled={openaiLoading} className="w-full" size="lg" variant="default">
+                <Button onClick={handleOpenAITTS} disabled={openaiLoading} className="w-full" size="lg">
                   {openaiLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Generating…</>
                     : <><Sparkles className="h-5 w-5" /> Generate Speech</>}
                 </Button>
@@ -242,23 +281,15 @@ const Upload = () => {
                 {/* Text input */}
                 <div className="space-y-2">
                   <Label>Text to Synthesize</Label>
-                  <Textarea value={cloneText} onChange={(e) => setCloneText(e.target.value)}
-                    placeholder="Enter text for cloned speech..." className="min-h-[120px]" />
+                  <Textarea
+                    value={cloneText}
+                    onChange={(e) => setCloneText(e.target.value)}
+                    placeholder="Enter text for cloned speech..."
+                    className="min-h-[120px]"
+                  />
                 </div>
 
-                {/* Advanced params */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                  <Input type="number" step="0.1" value={exaggeration} onChange={(e) => setExaggeration(e.target.value)} placeholder="Exaggeration" />
-                  <Input type="number" step="0.1" value={temperature} onChange={(e) => setTemperature(e.target.value)} placeholder="Temperature" />
-                  <Input type="number" value={seed} onChange={(e) => setSeed(e.target.value)} placeholder="Seed" />
-                  <Input type="number" step="0.1" value={cfgw} onChange={(e) => setCfgw(e.target.value)} placeholder="CfgW" />
-                </div>
-                <Select value={vadTrim} onValueChange={setVadTrim}>
-                  <SelectTrigger><SelectValue placeholder="VAD Trim" /></SelectTrigger>
-                  <SelectContent><SelectItem value="true">true</SelectItem><SelectItem value="false">false</SelectItem></SelectContent>
-                </Select>
-
-                <Button onClick={handleVoiceClone} disabled={cloneLoading} className="w-full" size="lg" variant="default">
+                <Button onClick={handleVoiceClone} disabled={cloneLoading} className="w-full" size="lg">
                   {cloneLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Cloning…</>
                     : <><Mic2 className="h-5 w-5" /> Clone With Recorded Voice</>}
                 </Button>
