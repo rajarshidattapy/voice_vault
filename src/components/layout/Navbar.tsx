@@ -1,10 +1,8 @@
 import { Link, useLocation } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Button } from "@/components/ui/button";
-import { useAccount } from "wagmi";
-import { getAccountBalance as getAptosAccountBalance } from "@/lib/aptos";
+import { useAptosWallet, getAccountBalance as getAptosAccountBalance } from "@/hooks/useAptosWallet";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -16,21 +14,20 @@ const navLinks = [
 export function Navbar() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { address } = useAccount();
+  const { isConnected, address, connect, disconnect, wallets } = useAptosWallet();
   const [aptBalance, setAptBalance] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function fetchBalance() {
-      // RainbowKit gives an EVM address (20 bytes). Aptos expects 32-byte addresses,
-      // so skip fetching if the address is not a valid Aptos-length hex string.
-      if (!address || address.length < 66) {
+      const addr = address?.toString();
+      if (!addr) {
         setAptBalance(null);
         return;
       }
       try {
-        const balance = await getAptosAccountBalance(address);
+        const balance = await getAptosAccountBalance(addr);
         if (!cancelled) {
           setAptBalance(balance);
         }
@@ -46,7 +43,29 @@ export function Navbar() {
     return () => {
       cancelled = true;
     };
-  }, [address]);
+      }, [address]);
+
+  const handleWalletClick = async () => {
+    try {
+      if (isConnected) {
+        await disconnect();
+        return;
+      }
+
+      // Prefer Petra if available, otherwise first wallet
+      const preferred =
+        wallets.find((w) => w.name.toLowerCase().includes("petra")) ?? wallets[0];
+
+      if (!preferred) {
+        console.error("No Aptos wallets available");
+        return;
+      }
+
+      await connect(preferred.name);
+    } catch (err) {
+      console.error("Wallet connect/disconnect error:", err);
+    }
+  };
 
   return (
     <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[94%] md:w-[88%] lg:w-[82%]">
@@ -59,7 +78,7 @@ export function Navbar() {
               <div className="absolute inset-0 bg-primary/30 blur-xl rounded-full group-hover:bg-primary/50 transition-all duration-300" />
               <img
                 src="/logo.png"
-                alt="VoiceVault Logo"
+                alt="V3 Labs Logo"
                 className="relative h-10 w-10 rounded-full object-cover"
               />
             </div>
@@ -91,20 +110,14 @@ export function Navbar() {
                 {aptBalance.toFixed(3)} APT
               </div>
             )}
-            <ConnectButton.Custom>
-              {({ openConnectModal, openAccountModal, account, chain, mounted }) => {
-                const connected = mounted && account && chain;
-
-                return (
-                  <Button
-                    variant="default"
-                    onClick={connected ? openAccountModal : openConnectModal}
-                  >
-                    {connected ? account.displayName : "Connect Wallet"}
-                  </Button>
-                );
-              }}
-            </ConnectButton.Custom>
+            <Button
+              variant="default"
+              onClick={handleWalletClick}
+            >
+              {isConnected && address
+                ? `${address.toString().slice(0, 6)}...${address.toString().slice(-4)}`
+                : "Connect Petra"}
+            </Button>
           </div>
 
           {/* Mobile Menu Button */}
@@ -134,22 +147,16 @@ export function Navbar() {
                 </Link>
               ))}
 
-              <div className="mt-2 flex items-center justify-center">
-                <ConnectButton.Custom>
-                  {({ openConnectModal, openAccountModal, account, chain, mounted }) => {
-                    const connected = mounted && account && chain;
-
-                    return (
-                      <Button
-                        variant="default"
-                        onClick={connected ? openAccountModal : openConnectModal}
-                        className="w-full"
-                      >
-                        {connected ? account.displayName : "Connect Wallet"}
-                      </Button>
-                    );
-                  }}
-                </ConnectButton.Custom>
+              <div className="mt-2 flex items-center justify-center px-4">
+                <Button
+                  variant="default"
+                  onClick={handleWalletClick}
+                  className="w-full"
+                >
+                  {isConnected && address
+                    ? `${address.toString().slice(0, 6)}...${address.toString().slice(-4)}`
+                    : "Connect Petra"}
+                </Button>
               </div>
             </div>
           </div>

@@ -6,10 +6,9 @@ import { Button } from "@/components/ui/button";
 import { DollarSign, Mic, Users, Clock, Plus, Settings, ExternalLink, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { useAccount } from "wagmi";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { getAccountBalance as getAptosAccountBalance } from "@/lib/aptos";
 import { useEffect, useState } from "react";
+import { useAptosWallet, getAccountBalance as getAptosAccountBalance } from "@/hooks/useAptosWallet";
 
 const mockVoices = [
   {
@@ -38,8 +37,8 @@ const recentActivity = [
 ];
 
 const Dashboard = () => {
-  const { address, isConnected } = useAccount();
-  const walletAddress = address || "";
+  const { address, isConnected } = useAptosWallet();
+  const walletAddress = address ? address.toString() : "";
   const connected = isConnected;
   const [aptBalance, setAptBalance] = useState<number | null>(null);
 

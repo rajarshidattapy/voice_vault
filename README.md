@@ -15,29 +15,6 @@ Creators/users who train/own a unique voice currently have no easy way to:
 
 Consumers who want to license a voice have no transparent, decentralized marketplace: rights, payments, and usage-tracking are opaque.
 
-## 🎯 Goal
-
-Provide a decentralized, transparent, secure “voice identity + marketplace + licensing/payment” platform on blockchain so that voice owners retain control, and usage is permissioned & paid.
-
-
-## 📊 Project Status
-
-✅ **Smart Contracts**: Deployed on Aptos Testnet  
-✅ **Frontend**: Fully integrated with Aptos
-✅ **Wallet**: Aptos wallet adapter configured  
-✅ **AI/ML**: OpenAI TTS + Gradio voice cloning  
-⚠️ **Production**: Needs IPFS integration & event indexing
-
-
-## 🧪 Testing with Mock Data
-
-The marketplace includes **6 mock voices** for testing the payment flow:
-- ✅ No need to register voices first
-- ✅ Test real blockchain transactions
-- ✅ Verify payment splits work correctly
-- ✅ Practice the full user journey
-
-
 ## ✨ Features
 
 ### 🎤 Voice Studio
@@ -62,9 +39,8 @@ The marketplace includes **6 mock voices** for testing the payment flow:
 
 ### Prerequisites
 - Node.js 18+ 
-- npm or bun
-- Aptos wallet (Petra recommended)
-- Python 3.8+ (for backend)
+- npm 
+- Aptos wallet
 
 ### Frontend Setup
 

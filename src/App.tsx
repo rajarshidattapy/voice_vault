@@ -10,14 +10,14 @@ import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
-import { RainbowWalletProvider } from "@/contexts/RainbowWalletProvider";
+import { WalletProvider } from "@/contexts/WalletContext";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
-      <RainbowWalletProvider>
+      <WalletProvider>
         <TooltipProvider>
           <Toaster />
           <Sonner />
@@ -52,7 +52,7 @@ const App = () => (
             </Routes>
           </BrowserRouter>
         </TooltipProvider>
-      </RainbowWalletProvider>
+      </WalletProvider>
     </QueryClientProvider>
   </HelmetProvider>
 );

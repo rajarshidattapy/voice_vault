@@ -1,14 +1,14 @@
-import { useAccount } from "wagmi";
+import { useWallet as useAptosWalletAdapter } from "@aptos-labs/wallet-adapter-react";
 
 /**
- * Thin wrapper to keep the existing `useWallet` API shape
- * while sourcing connection state from RainbowKit / wagmi.
+ * Thin wrapper to keep the existing `useWallet` API shape,
+ * now using the Aptos wallet adapter (e.g. Petra).
  */
 export function useWallet() {
-  const { address, isConnected } = useAccount();
+  const wallet = useAptosWalletAdapter();
 
   return {
-    connected: isConnected,
-    account: address ? { address } : undefined,
+    connected: wallet.connected && !!wallet.account?.address,
+    account: wallet.account,
   };
 }
