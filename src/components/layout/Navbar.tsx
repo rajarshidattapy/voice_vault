@@ -1,19 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
+import { Menu, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Wallet, LogOut, Copy, Check } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useWallet } from "@/hooks/use-wallet";
-import { toast } from "sonner";
-import { formatAddress } from "@/lib/aptos";
-import { useRewards } from "@/contexts/RewardsContext";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { useAccount } from "wagmi";
+import { getAccountBalance as getAptosAccountBalance } from "@/lib/aptos";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -25,56 +16,37 @@ const navLinks = [
 export function Navbar() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const { connected, account, connect, disconnect } = useWallet();
-  const { patBalance, discountPercentage, refreshBalance } = useRewards();
+  const { address } = useAccount();
+  const [aptBalance, setAptBalance] = useState<number | null>(null);
 
-  const walletAddress = account?.address?.toString() || "";
-
-  // Refresh balance periodically to catch updates
   useEffect(() => {
-    if (!connected) return;
-    
-    const interval = setInterval(() => {
-      refreshBalance();
-    }, 2000); // Check every 2 seconds
+    let cancelled = false;
 
-    return () => clearInterval(interval);
-  }, [connected, refreshBalance]);
-
-  const handleCopyAddress = () => {
-    if (!walletAddress) return;
-    navigator.clipboard.writeText(walletAddress);
-    setCopied(true);
-    toast.success("Address copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleConnect = async () => {
-    try {
-      await connect("Petra");
-      toast.success("Wallet Connected", {
-        description: "Successfully connected to Petra wallet",
-      });
-    } catch (error) {
-      console.error("Connection error:", error);
-      if (error instanceof Error) {
-        toast.error("Connection Failed", { description: error.message });
+    async function fetchBalance() {
+      // RainbowKit gives an EVM address (20 bytes). Aptos expects 32-byte addresses,
+      // so skip fetching if the address is not a valid Aptos-length hex string.
+      if (!address || address.length < 66) {
+        setAptBalance(null);
+        return;
+      }
+      try {
+        const balance = await getAptosAccountBalance(address);
+        if (!cancelled) {
+          setAptBalance(balance);
+        }
+      } catch {
+        if (!cancelled) {
+          setAptBalance(null);
+        }
       }
     }
-  };
 
-  const handleDisconnect = async () => {
-    try {
-      await disconnect();
-      toast.success("Wallet Disconnected");
-    } catch (error) {
-      console.error("Disconnection error:", error);
-      if (error instanceof Error) {
-        toast.error("Disconnection Failed", { description: error.message });
-      }
-    }
-  };
+    fetchBalance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
 
   return (
     <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[94%] md:w-[88%] lg:w-[82%]">
@@ -114,67 +86,25 @@ export function Navbar() {
 
           {/* Right Section */}
           <div className="hidden md:flex items-center gap-7">
-            {/* PAT / OFF badge */}
-            {connected && (
-              <div 
-                key={`pat-${patBalance}`}
-                className="px-4 py-2 rounded-full bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 backdrop-blur-md flex items-center gap-3 text-xs font-semibold shadow-lg animate-in fade-in slide-in-from-top-2 duration-500"
-              >
-                <span className="text-yellow-400 flex items-center gap-1">
-                  <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
-                  {patBalance} PAT
-                </span>
-                <span className="opacity-50">|</span>
-                <span className="text-green-400">{discountPercentage}% OFF</span>
+            {address && aptBalance !== null && (
+              <div className="px-3 py-1 rounded-full bg-primary/10 text-xs font-medium text-primary">
+                {aptBalance.toFixed(3)} APT
               </div>
             )}
+            <ConnectButton.Custom>
+              {({ openConnectModal, openAccountModal, account, chain, mounted }) => {
+                const connected = mounted && account && chain;
 
-            {/* Wallet */}
-            {connected && walletAddress ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+                return (
                   <Button
-                    variant="gradient"
-                    size="default"
-                    className="flex items-center gap-2 shadow-[0_0_12px_rgba(255,80,80,0.45)] hover:shadow-[0_0_18px_rgba(255,80,80,0.65)] transition-shadow"
+                    variant="default"
+                    onClick={connected ? openAccountModal : openConnectModal}
                   >
-                    <Wallet className="h-4 w-4" />
-                    {formatAddress(walletAddress)}
+                    {connected ? account.displayName : "Connect Wallet"}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>My Wallet</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="font-mono text-xs cursor-pointer"
-                    onClick={handleCopyAddress}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="truncate flex-1">{walletAddress}</span>
-                      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleDisconnect}
-                    className="text-destructive cursor-pointer"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Disconnect
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <Button
-                variant="gradient"
-                size="default"
-                onClick={handleConnect}
-                className="flex items-center gap-2 shadow-[0_0_12px_rgba(255,80,80,0.45)] hover:shadow-[0_0_18px_rgba(255,80,80,0.65)] transition-shadow"
-              >
-                <Wallet className="h-4 w-4" />
-                Connect Petra
-              </Button>
-            )}
+                );
+              }}
+            </ConnectButton.Custom>
           </div>
 
           {/* Mobile Menu Button */}
@@ -204,23 +134,23 @@ export function Navbar() {
                 </Link>
               ))}
 
-              <Button
-                variant="gradient"
-                className="mt-2 flex items-center gap-2"
-                onClick={connected ? handleDisconnect : handleConnect}
-              >
-                {connected ? (
-                  <>
-                    <LogOut className="h-4 w-4" />
-                    Disconnect
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="h-4 w-4" />
-                    Connect Petra
-                  </>
-                )}
-              </Button>
+              <div className="mt-2 flex items-center justify-center">
+                <ConnectButton.Custom>
+                  {({ openConnectModal, openAccountModal, account, chain, mounted }) => {
+                    const connected = mounted && account && chain;
+
+                    return (
+                      <Button
+                        variant="default"
+                        onClick={connected ? openAccountModal : openConnectModal}
+                        className="w-full"
+                      >
+                        {connected ? account.displayName : "Connect Wallet"}
+                      </Button>
+                    );
+                  }}
+                </ConnectButton.Custom>
+              </div>
             </div>
           </div>
         )}

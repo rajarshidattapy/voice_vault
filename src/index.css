@@ -15,7 +15,7 @@
     --popover: 0 0% 8%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 0 100% 50%;           /* Aptos Red */
+    --primary: 0 100% 55%;           /* Slightly lighter Aptos Red */
     --primary-foreground: 0 0% 98%;
 
     --secondary: 0 0% 15%;           /* Dark gray */
@@ -24,7 +24,7 @@
     --muted: 0 0% 15%;
     --muted-foreground: 0 0% 60%;
 
-    --accent: 0 85% 45%;             /* Darker red accent */
+    --accent: 0 85% 50%;             /* Slightly lighter red accent */
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 84% 60%;
@@ -32,7 +32,7 @@
 
     --border: 0 0% 18%;
     --input: 0 0% 15%;
-    --ring: 0 100% 50%;              /* Aptos Red */
+    --ring: 0 100% 55%;              /* Aptos Red (match primary) */
 
     --radius: 0.75rem;
 

@@ -26,7 +26,7 @@ export function HeroSection() {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8 animate-fade-in">
             <img src="/aptos.jpeg" alt="Aptos" className="h-5 w-5 rounded-full object-cover" />
-            <span className="text-sm font-medium text-primary">Powered by Aptos</span>
+            <span className="text-sm font-medium text-primary">Powered by Aptos and Shelby</span>
           </div>
 
           {/* Heading */}

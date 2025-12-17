@@ -102,15 +102,6 @@ export function usePayForInference() {
                 description: `All payments completed! Final TX: ${txHash.slice(0, 8)}...${txHash.slice(-6)}`,
             });
 
-            // Award PAT token for successful payment
-            try {
-                // Import dynamically to avoid circular dependencies
-                const { useRewards } = await import("@/contexts/RewardsContext");
-                // Note: This won't work directly in a hook, we'll handle it in the component
-            } catch (error) {
-                console.log("Rewards context not available");
-            }
-
             // Call success callback
             if (onSuccess) {
                 onSuccess(txHash);

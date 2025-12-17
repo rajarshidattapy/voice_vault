@@ -1,4 +1,4 @@
-import { useWallet } from "@/hooks/use-wallet";
+import { useAccount } from "wagmi";
 import { WalletConnectButton } from "@/components/wallet/WalletConnectButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lock } from "lucide-react";
@@ -9,9 +9,9 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-    const { connected } = useWallet();
+    const { isConnected } = useAccount();
 
-    if (!connected) {
+    if (!isConnected) {
         return (
             <div className="container flex items-center justify-center min-h-[calc(100vh-4rem)]">
                 <Card className="w-full max-w-md border-white/10 bg-black/40 backdrop-blur-xl">

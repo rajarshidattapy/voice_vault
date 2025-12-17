@@ -4,49 +4,55 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
-import { WalletProvider } from "@/contexts/WalletContext";
-import { RewardsProvider } from "@/contexts/RewardsContext";
 import Index from "./pages/Index";
 import Marketplace from "./pages/Marketplace";
 import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { RainbowWalletProvider } from "@/contexts/RainbowWalletProvider";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
-      <WalletProvider>
-        <RewardsProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/marketplace" element={
+      <RainbowWalletProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route
+                path="/marketplace"
+                element={
                   <ProtectedRoute>
                     <Marketplace />
                   </ProtectedRoute>
-                } />
-                <Route path="/dashboard" element={
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
                   <ProtectedRoute>
                     <Dashboard />
                   </ProtectedRoute>
-                } />
-                <Route path="/upload" element={
+                }
+              />
+              <Route
+                path="/upload"
+                element={
                   <ProtectedRoute>
                     <Upload />
                   </ProtectedRoute>
-                } />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </RewardsProvider>
-      </WalletProvider>
+                }
+              />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </RainbowWalletProvider>
     </QueryClientProvider>
   </HelmetProvider>
 );

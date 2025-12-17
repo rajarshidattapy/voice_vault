@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { DollarSign, Mic, Users, Clock, Plus, Settings, ExternalLink, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { useWallet } from "@/hooks/use-wallet";
+import { useAccount } from "wagmi";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getAccountBalance as getAptosAccountBalance } from "@/lib/aptos";
+import { useEffect, useState } from "react";
 
 const mockVoices = [
   {
@@ -36,8 +38,38 @@ const recentActivity = [
 ];
 
 const Dashboard = () => {
-  const { connected, account } = useWallet();
-  const walletAddress = account?.address?.toString() || '';
+  const { address, isConnected } = useAccount();
+  const walletAddress = address || "";
+  const connected = isConnected;
+  const [aptBalance, setAptBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchBalance() {
+      // Skip fetching if the connected address is not a full-length Aptos address.
+      if (!walletAddress || walletAddress.length < 66) {
+        setAptBalance(null);
+        return;
+      }
+      try {
+        const balance = await getAptosAccountBalance(walletAddress);
+        if (!cancelled) {
+          setAptBalance(balance);
+        }
+      } catch {
+        if (!cancelled) {
+          setAptBalance(null);
+        }
+      }
+    }
+
+    fetchBalance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
 
   return (
     <>
@@ -69,6 +101,11 @@ const Dashboard = () => {
                     <div>
                       <p className="text-sm text-muted-foreground">Connected Wallet</p>
                       <p className="font-mono text-sm font-semibold">{walletAddress}</p>
+                      {aptBalance !== null && (
+                        <p className="text-xs text-primary mt-1">
+                          {aptBalance.toFixed(3)} APT
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">

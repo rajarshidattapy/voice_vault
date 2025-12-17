@@ -6,18 +6,20 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Sparkles, Download, Loader2, Mic2 } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const Upload = () => {
-  // ------------------- OpenAI TTS -------------------
-  const [openaiText, setOpenaiText] = useState("");
-  const [openaiVoice, setOpenaiVoice] = useState("alloy");
-  const [openaiLoading, setOpenaiLoading] = useState(false);
-  const [openaiAudioUrl, setOpenaiAudioUrl] = useState<string | null>(null);
+  // ------------------- ElevenLabs TTS -------------------
+  const [ttsText, setTtsText] = useState("");
+  const [ttsVoiceId, setTtsVoiceId] = useState<string>("21m00Tcm4TlvDq8ikWAM"); // Default: Rachel
+  const [availableVoices, setAvailableVoices] = useState<Array<{ voice_id: string; name: string }>>([]);
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const [ttsAudioUrl, setTtsAudioUrl] = useState<string | null>(null);
 
-  // ------------------- ElevenLabs Clone -------------------
+  // ------------------- Voice Cloning with ElevenLabs -------------------
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
   const [cloneText, setCloneText] = useState("");
@@ -27,8 +29,6 @@ const Upload = () => {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-
-  const PROXY = import.meta.env.VITE_PROXY_URL || "http://localhost:3001";
 
   // ------------------- Registration Autofill -------------------
   const [autoName, setAutoName] = useState("");
@@ -56,91 +56,154 @@ const Upload = () => {
       toast.error("Mic permission denied");
     }
   };
+
   const stopRecording = () => {
     mediaRecorderRef.current?.stop();
     setRecording(false);
     toast.info("Recording stopped");
   };
 
-  // ------------------- OpenAI TTS -------------------
-  const handleOpenAITTS = async () => {
-    if (!openaiText.trim()) return toast.error("Enter text");
-    setOpenaiLoading(true);
-    try {
-      const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-      const r = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini-tts",
-          voice: openaiVoice,
-          input: openaiText,
-        }),
-      });
+  // ------------------- Load available ElevenLabs voices on mount -------------------
+  useEffect(() => {
+    const loadVoices = async () => {
+      try {
+        const { backendApi } = await import("@/lib/api");
+        const voicesData = await backendApi.getElevenLabsVoices();
+        setAvailableVoices(voicesData.voices || []);
+        // Set default voice if available
+        if (voicesData.voices?.length > 0 && !ttsVoiceId) {
+          setTtsVoiceId(voicesData.voices[0].voice_id);
+        }
+      } catch (err) {
+        console.error("Failed to load voices:", err);
+        // Continue with default voice
+      }
+    };
+    loadVoices();
+  }, []);
 
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      setOpenaiAudioUrl(url);
-      toast.success("TTS generated");
-    } catch {
-      toast.error("OpenAI error");
+  // ------------------- ElevenLabs TTS -------------------
+  const handleElevenLabsTTS = async () => {
+    if (!ttsText.trim()) {
+      toast.error("Please enter text to generate");
+      return;
     }
-    setOpenaiLoading(false);
+    if (!ttsVoiceId) {
+      toast.error("Please select a voice");
+      return;
+    }
+
+    setTtsLoading(true);
+    try {
+      const { backendApi } = await import("@/lib/api");
+      toast.info("Generating speech...");
+      const audioBlob = await backendApi.generateElevenLabsSpeech(ttsVoiceId, ttsText);
+      const url = URL.createObjectURL(audioBlob);
+      setTtsAudioUrl(url);
+      toast.success("Speech generated successfully!");
+    } catch (err: any) {
+      console.error("TTS error:", err);
+      toast.error(err.message || "Failed to generate speech");
+    } finally {
+      setTtsLoading(false);
+    }
   };
 
-  // ------------------- ElevenLabs Clone + TTS + Autofill -------------------
-  const handleClone = async () => {
-    if (!cloneText.trim()) return toast.error("Enter text");
-    if (!selectedFile && !savedVoiceId) return toast.error("Record first");
+  // ------------------- File Upload Handler -------------------
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type.startsWith("audio/")) {
+        setSelectedFile(file);
+        toast.success("Audio file selected");
+      } else {
+        toast.error("Please select an audio file");
+      }
+    }
+  };
+
+  // ------------------- Generate TTS with Voice Cloning -------------------
+  const handleGenerateTTS = async () => {
+    if (!cloneText.trim()) {
+      toast.error("Please enter text to generate");
+      return;
+    }
+    if (!selectedFile && !savedVoiceId) {
+      toast.error("Please record or upload an audio file first");
+      return;
+    }
 
     setCloneLoading(true);
     try {
+      const { backendApi } = await import("@/lib/api");
       let voiceId = savedVoiceId;
 
+      // Clone voice if we don't have a saved voice ID
       if (!voiceId) {
-        const base64 = await selectedFile!.arrayBuffer().then(buf =>
-          btoa(String.fromCharCode(...new Uint8Array(buf)))
+        if (!selectedFile) {
+          throw new Error("No audio file selected");
+        }
+
+        toast.info("Cloning voice...");
+        const cloneResult = await backendApi.cloneVoice(
+          `VoiceVault_${Date.now()}`,
+          [selectedFile]
         );
 
-        const cloneRes = await fetch(`${PROXY}/api/elevenlabs/clone`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: `VoiceVault_${Date.now()}`,
-            files: [{ base64 }],
-          }),
-        });
-
-        const j = await cloneRes.json();
-        if (!cloneRes.ok) throw new Error(j.error || "Clone failed");
-
-        voiceId = j.voice_id;
+        voiceId = cloneResult.voice_id;
         localStorage.setItem("eleven_voice_id", voiceId);
         setSavedVoiceId(voiceId);
+        toast.success("Voice cloned successfully!");
       }
 
-      // Auto-fill Registration ♥
+      // Auto-fill Registration form
       setAutoName(`VoiceVault ${voiceId.slice(0, 4)}`);
       setAutoModelUri(`eleven:${voiceId}`);
 
-      const tts = await fetch(`${PROXY}/api/elevenlabs/speak`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voiceId, text: cloneText }),
-      });
+      // Generate speech with cloned voice
+      toast.info("Generating speech...");
+      try {
+        const audioBlob = await backendApi.generateElevenLabsSpeech(voiceId, cloneText);
+        const url = URL.createObjectURL(audioBlob);
+        setClonedUrl(url);
+        toast.success("Audio generated successfully!");
+      } catch (ttsError: any) {
+        // If voice not found, clear saved voice and re-clone
+        if (ttsError.message?.includes('voice_not_found') || ttsError.message?.includes('not found')) {
+          console.warn("Saved voice ID is invalid, clearing and re-cloning...");
+          localStorage.removeItem("eleven_voice_id");
+          setSavedVoiceId(null);
+          
+          if (!selectedFile) {
+            throw new Error("The saved voice no longer exists. Please record or upload a new audio file to clone.");
+          }
 
-      const buffer = await tts.arrayBuffer();
-      const url = URL.createObjectURL(new Blob([buffer], { type: "audio/mpeg" }));
-      setClonedUrl(url);
+          toast.info("Voice expired, cloning new voice...");
+          const cloneResult = await backendApi.cloneVoice(
+            `VoiceVault_${Date.now()}`,
+            [selectedFile]
+          );
 
-      toast.success("Cloned & Generated");
+          voiceId = cloneResult.voice_id;
+          localStorage.setItem("eleven_voice_id", voiceId);
+          setSavedVoiceId(voiceId);
+          toast.success("Voice re-cloned successfully!");
+
+          // Retry TTS with new voice
+          const audioBlob = await backendApi.generateElevenLabsSpeech(voiceId, cloneText);
+          const url = URL.createObjectURL(audioBlob);
+          setClonedUrl(url);
+          toast.success("Audio generated successfully!");
+        } else {
+          throw ttsError;
+        }
+      }
     } catch (err: any) {
-      toast.error(err.message || "Clone failed");
+      console.error("Clone/TTS error:", err);
+      toast.error(err.message || "Failed to clone voice or generate audio");
+    } finally {
+      setCloneLoading(false);
     }
-    setCloneLoading(false);
   };
 
   return (
@@ -150,59 +213,165 @@ const Upload = () => {
       <main className="pt-32 pb-16">
         <div className="container max-w-5xl mx-auto px-4 space-y-16">
 
-          {/* ------------------- OpenAI TTS ------------------- */}
+          {/* ------------------- ElevenLabs TTS Section ------------------- */}
           <Card>
             <CardHeader>
               <CardTitle>Text → Speech</CardTitle>
-              <CardDescription>Try synthetic voices</CardDescription>
+              <CardDescription>Generate speech using Text</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="tts-voice">Select Voice</Label>
+                <Select value={ttsVoiceId} onValueChange={setTtsVoiceId}>
+                  <SelectTrigger id="tts-voice">
+                    <SelectValue placeholder="Select a voice" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableVoices.length > 0 ? (
+                      availableVoices.map((voice) => (
+                        <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                          {voice.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value={ttsVoiceId}>Rachel (Default)</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
               <Textarea
-                value={openaiText}
-                onChange={(e) => setOpenaiText(e.target.value)}
-                placeholder="Type text here"
+                value={ttsText}
+                onChange={(e) => setTtsText(e.target.value)}
+                placeholder="Type text here to generate speech..."
+                className="min-h-[100px]"
               />
-              <Button onClick={handleOpenAITTS} disabled={openaiLoading} className="w-full">
-                {openaiLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+              <Button onClick={handleElevenLabsTTS} disabled={ttsLoading} className="w-full">
+                {ttsLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                 Generate Speech
               </Button>
-              {openaiAudioUrl && (
-                <div className="space-y-3">
-                  <audio controls src={openaiAudioUrl} className="w-full" />
+              {ttsAudioUrl && (
+                <div className="space-y-3 bg-muted/40 p-4 rounded-xl">
+                  <audio controls src={ttsAudioUrl} className="w-full" />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = ttsAudioUrl;
+                      a.download = `voicevault-tts-${Date.now()}.mp3`;
+                      a.click();
+                    }}
+                    className="w-full"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Audio
+                  </Button>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* ------------------- ElevenLabs Voice Clone ------------------- */}
+          {/* ------------------- Voice Cloning Section (ElevenLabs) ------------------- */}
           <Card>
             <CardHeader>
-              <CardTitle>Clone Your Voice </CardTitle>
-              <CardDescription>Record once → Generate unlimited speech</CardDescription>
+              <CardTitle>Clone Your Voice</CardTitle>
+              <CardDescription>Record or upload audio → Clone your voice → Generate unlimited speech</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-
-              {/* Mic */}
-              <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                {!recording ? (
-                  <Button onClick={startRecording} className="w-full">🎤 Start Recording</Button>
-                ) : (
-                  <Button onClick={stopRecording} className="w-full" variant="destructive">⏹ Stop Recording</Button>
-                )}
-                {selectedFile && <p className="text-primary mt-2">{selectedFile.name}</p>}
+              {/* Audio Input Options */}
+              <div className="space-y-4">
+                <Label>Audio Reference (Record or Upload)</Label>
+                
+                {/* Mic Recording */}
+                <div className="border-2 border-dashed rounded-lg p-6 text-center space-y-4">
+                  {!recording ? (
+                    <Button onClick={startRecording} className="w-full">
+                      <Mic2 className="h-5 w-5 mr-2" />
+                      Start Recording
+                    </Button>
+                  ) : (
+                    <Button onClick={stopRecording} className="w-full" variant="destructive">
+                      ⏹ Stop Recording
+                    </Button>
+                  )}
+                  
+                  <div className="text-sm text-muted-foreground">OR</div>
+                  
+                  {/* File Upload */}
+                  <div>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      id="audio-upload"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => document.getElementById("audio-upload")?.click()}
+                      className="w-full"
+                    >
+                      📁 Upload Audio File
+                    </Button>
+                  </div>
+                  
+                  {selectedFile && (
+                    <div className="mt-4 p-3 bg-muted/40 rounded-lg">
+                      <p className="text-sm font-medium text-primary">
+                        ✓ {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <Label>Text to speak with your cloned voice</Label>
-              <Textarea value={cloneText} onChange={(e) => setCloneText(e.target.value)} />
+              {/* Text Input */}
+              <div className="space-y-2">
+                <Label htmlFor="clone-text">Text to speak with your cloned voice</Label>
+                <Textarea
+                  id="clone-text"
+                  value={cloneText}
+                  onChange={(e) => setCloneText(e.target.value)}
+                  placeholder="Enter the text you want to generate in your voice..."
+                  className="min-h-[100px]"
+                />
+              </div>
 
-              <Button onClick={handleClone} disabled={cloneLoading} className="w-full">
-                {cloneLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mic2 className="h-5 w-5" />}
-                Clone & Generate Audio
+              {/* Generate Button */}
+              <Button 
+                onClick={handleGenerateTTS} 
+                disabled={cloneLoading || !selectedFile || !cloneText.trim()} 
+                className="w-full"
+              >
+                {cloneLoading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-5 w-5 mr-2" />
+                    Generate Speech
+                  </>
+                )}
               </Button>
 
+              {/* Audio Output */}
               {clonedUrl && (
                 <div className="space-y-3 bg-muted/40 p-6 rounded-xl">
                   <audio controls src={clonedUrl} className="w-full" />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = clonedUrl;
+                      a.download = `voicevault-cloned-${Date.now()}.wav`;
+                      a.click();
+                    }}
+                    className="w-full"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Audio
+                  </Button>
                 </div>
               )}
             </CardContent>
@@ -212,6 +381,7 @@ const Upload = () => {
           <Card>
             <CardHeader>
               <CardTitle>Register Your Voice Model</CardTitle>
+              <CardDescription>Register your cloned voice on-chain</CardDescription>
             </CardHeader>
             <CardContent>
               <VoiceRegistrationForm

@@ -11,8 +11,6 @@ const footerLinks = {
   resources: [
     { label: "Documentation", href: "#" },
     { label: "API Reference", href: "#" },
-    { label: "Tutorials", href: "#" },
-    { label: "Blog", href: "#" },
   ],
   legal: [
     { label: "Privacy Policy", href: "#" },
@@ -22,9 +20,8 @@ const footerLinks = {
 };
 
 const socialLinks = [
-  { icon: Twitter, href: "#", label: "Twitter" },
-  { icon: Github, href: "#", label: "GitHub" },
-  { icon: MessageCircle, href: "#", label: "Discord" },
+  { icon: Twitter, href: "https://x.com/V3Labz", label: "Twitter" },
+  { icon: Github, href: "https://github.com/rajarshidattapy/voice_vault", label: "GitHub" }
 ];
 
 export function Footer() {
@@ -111,7 +108,7 @@ export function Footer() {
 
         <div className="border-t border-border/50 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-sm text-muted-foreground">
-            © 2024 VoiceVault. All rights reserved.
+            Built at Build on Aptos, Bangalore, 2025
           </p>
           <p className="text-sm text-muted-foreground">
             Built on <span className="text-primary">Aptos</span>

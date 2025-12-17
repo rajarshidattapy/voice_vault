@@ -17,8 +17,6 @@ import { getVoiceAddresses } from "@/lib/voiceRegistry";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { InfoIcon } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRewards } from "@/contexts/RewardsContext";
-import { ScratchCardModal } from "@/components/rewards/ScratchCardModal";
 
 const filterTabs = [
   { id: "trending", label: "Trending", icon: TrendingUp },
@@ -88,12 +86,9 @@ const Marketplace = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("trending");
   const [voiceAddresses, setVoiceAddresses] = useState<string[]>([]);
-  
-  // Rewards system
-  const { logEvent, patBalance, discountPercentage } = useRewards();
-  const [showScratchCard, setShowScratchCard] = useState(false);
-  const [scratchCardReward, setScratchCardReward] = useState(0);
-  
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<VoiceMetadata[]>([]);
+  const [isLoadingElevenLabs, setIsLoadingElevenLabs] = useState(false);
+
   // TTS Dialog state
   const [selectedVoice, setSelectedVoice] = useState<VoiceMetadata | null>(null);
   const [paymentTxHash, setPaymentTxHash] = useState<string | null>(null);
@@ -108,12 +103,47 @@ const Marketplace = () => {
     setVoiceAddresses(addresses);
   }, []);
 
+  // Fetch ElevenLabs voices
+  useEffect(() => {
+    const fetchElevenLabsVoices = async () => {
+      setIsLoadingElevenLabs(true);
+      try {
+        const { backendApi } = await import("@/lib/api");
+        const voicesData = await backendApi.getElevenLabsVoices();
+        
+        // Convert ElevenLabs voices to VoiceMetadata format
+        const convertedVoices: VoiceMetadata[] = (voicesData.voices || []).map((voice, index) => ({
+          owner: `0xelevenlabs${voice.voice_id.slice(0, 20)}`, // Placeholder owner address
+          voiceId: voice.voice_id,
+          name: voice.name,
+          modelUri: `eleven:${voice.voice_id}`,
+          rights: "commercial",
+          pricePerUse: 0.05, // Default price for ElevenLabs voices
+          createdAt: Date.now() - (index * 86400000), // Stagger creation dates
+        }));
+        
+        setElevenLabsVoices(convertedVoices);
+      } catch (err) {
+        console.error("Failed to load ElevenLabs voices:", err);
+        // Don't show error to user, just log it
+        setElevenLabsVoices([]);
+      } finally {
+        setIsLoadingElevenLabs(false);
+      }
+    };
+
+    fetchElevenLabsVoices();
+  }, []);
+
   // Fetch metadata for all registered voices using the optimized hook
   const { voices: onChainVoices, isLoading: isLoadingOnChain } = useMultipleVoiceMetadata(voiceAddresses);
   
-  // Combine on-chain voices with mock data (mocks fill in when no real voices exist)
-  const voices = onChainVoices.length > 0 ? onChainVoices : MOCK_VOICES;
-  const isLoading = isLoadingOnChain;
+  // Combine on-chain voices, ElevenLabs voices, and mock data
+  const voices = [
+    ...elevenLabsVoices,
+    ...(onChainVoices.length > 0 ? onChainVoices : MOCK_VOICES),
+  ];
+  const isLoading = isLoadingOnChain || isLoadingElevenLabs;
 
   const handleVoiceSelected = async (voice: VoiceMetadata, txHash: string) => {
     setSelectedVoice(voice);
@@ -130,25 +160,8 @@ const Marketplace = () => {
       purchasedAt: Date.now(),
       txHash: txHash,
     });
-    
-    // Award PAT token for successful payment
-    await logEvent("VOICE_PURCHASED", {
-      voiceName: voice.name,
-      price: voice.pricePerUse,
-      txHash: txHash,
-    });
-    
-    // Show scratch card with reward
-    setScratchCardReward(1); // +1 PAT per purchase
-    setShowScratchCard(true);
-    
-    // After scratch card is closed, show TTS dialog
-    // (handled by scratch card onClose)
-  };
 
-  const handleScratchCardClose = () => {
-    setShowScratchCard(false);
-    // Now show TTS dialog
+    // After successful payment, open the TTS dialog directly
     setShowTTSDialog(true);
     setGeneratedAudioUrl(null);
     setTtsText("");
@@ -163,8 +176,18 @@ const Marketplace = () => {
     setIsGenerating(true);
 
     try {
+      // Check if it's an ElevenLabs voice
+      if (selectedVoice.modelUri.startsWith("eleven:")) {
+        const voiceId = selectedVoice.modelUri.replace("eleven:", "");
+        const { backendApi } = await import("@/lib/api");
+        
+        toast.info("Generating speech with ElevenLabs...");
+        const audioBlob = await backendApi.generateElevenLabsSpeech(voiceId, ttsText);
+        setGeneratedAudioUrl(URL.createObjectURL(audioBlob));
+        toast.success("Audio generated successfully!");
+      } 
       // Check if it's an OpenAI voice
-      if (selectedVoice.modelUri.startsWith("openai:")) {
+      else if (selectedVoice.modelUri.startsWith("openai:")) {
         const voiceId = selectedVoice.modelUri.replace("openai:", "");
         const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
 
@@ -192,10 +215,6 @@ const Marketplace = () => {
       } else {
         // For custom voices, show a message
         toast.info("Custom voice inference requires additional setup. Using default voice for demo.");
-        
-        // You could implement Gradio client here for custom voices
-        // const client = await Client.connect("ResembleAI/Chatterbox");
-        // ... etc
       }
     } catch (error: any) {
       toast.error("Generation failed", {
@@ -311,15 +330,6 @@ const Marketplace = () => {
         </main>
         <Footer />
       </div>
-
-      {/* Scratch Card Modal (shown after payment) */}
-      <ScratchCardModal
-        isOpen={showScratchCard}
-        onClose={handleScratchCardClose}
-        reward={scratchCardReward}
-        patBalance={patBalance}
-        discountPercentage={discountPercentage}
-      />
 
       {/* TTS Generation Dialog (shown after scratch card) */}
       <Dialog open={showTTSDialog} onOpenChange={setShowTTSDialog}>

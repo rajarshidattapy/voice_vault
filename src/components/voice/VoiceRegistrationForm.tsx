@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useVoiceRegister } from "@/hooks/useVoiceRegister";
 import { useAptosWallet } from "@/hooks/useAptosWallet";
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,26 @@ import { Loader2, CheckCircle2, Upload, FileAudio } from "lucide-react";
 import { toast } from "sonner";
 import { addVoiceToRegistry } from "@/lib/voiceRegistry";
 
-export function VoiceRegistrationForm() {
+interface VoiceRegistrationFormProps {
+  autoName?: string;
+  autoModelUri?: string;
+}
+
+export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: VoiceRegistrationFormProps) {
   const { registerVoice, isRegistering } = useVoiceRegister();
   const { address } = useAptosWallet();
   const [formData, setFormData] = useState({
-    name: "",
-    modelUri: "",
+    name: autoName,
+    modelUri: autoModelUri,
     rights: "commercial",
     pricePerUse: "0.1",
   });
+
+  // Update form when auto-fill values change
+  useEffect(() => {
+    if (autoName) setFormData(prev => ({ ...prev, name: autoName }));
+    if (autoModelUri) setFormData(prev => ({ ...prev, modelUri: autoModelUri }));
+  }, [autoName, autoModelUri]);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -42,7 +53,10 @@ export function VoiceRegistrationForm() {
       try {
         toast.info("Uploading voice file...");
         
-        const path = generateVoicePath(address.toString(), audioFile.name);
+        // Generate a unique path for the voice file
+        const timestamp = Date.now();
+        const sanitizedName = audioFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const path = `voices/${address.toString()}/${timestamp}_${sanitizedName}`;
         
         try {
         //   await uploadToShelby({
