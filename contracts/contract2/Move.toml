@@ -3,7 +3,7 @@ name = "VoiceVault"
 version = "1.0.0"
 
 [addresses]
-VoiceVault = "0x594d426ee5f8d800c7ede249d83a4cbfc4ee0c7dbcefece5ae6e727b7b0cf9db"
+VoiceVault = "0xf32dc47c185d9bc65638b57eb50eb0c9c47832f898e373a6e1636535c6f1772c"
 
 [dependencies.AptosFramework]
 git = "https://github.com/aptos-labs/aptos-core.git"

@@ -6,6 +6,7 @@ module VoiceVault::voice_identity {
     /// Error codes
     const ERROR_VOICE_ALREADY_EXISTS: u64 = 1;
     const ERROR_VOICE_NOT_FOUND: u64 = 2;
+    const ERROR_UNAUTHORIZED: u64 = 3;
 
     struct VoiceIdentity has key {
         owner: address,
@@ -113,5 +114,34 @@ module VoiceVault::voice_identity {
         } else {
             0
         }
+    }
+
+    /// Unregister/delete a voice (only owner can delete their own voice)
+    public entry fun unregister_voice(creator: &signer) acquires VoiceIdentity {
+        let creator_addr = signer::address_of(creator);
+
+        // Verify voice exists
+        assert!(
+            exists<VoiceIdentity>(creator_addr),
+            ERROR_VOICE_NOT_FOUND
+        );
+
+        // Verify the signer is the owner of the voice
+        let voice = borrow_global<VoiceIdentity>(creator_addr);
+        assert!(
+            voice.owner == creator_addr,
+            ERROR_UNAUTHORIZED
+        );
+
+        // Destroy the VoiceIdentity resource
+        let VoiceIdentity {
+            owner: _,
+            voice_id: _,
+            name: _,
+            model_uri: _,
+            rights: _,
+            price_per_use: _,
+            created_at: _,
+        } = move_from<VoiceIdentity>(creator_addr);
     }
 }
