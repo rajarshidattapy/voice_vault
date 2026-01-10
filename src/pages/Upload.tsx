@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Sparkles, Download, Loader2, Mic2, Upload as UploadIcon } from "lucide-react";
+import { Sparkles, Download, Loader2, Mic2, Upload as UploadIcon, Mic } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { toast } from "sonner";
@@ -24,6 +24,10 @@ const Upload = () => {
   const [purchasedVoices, setPurchasedVoices] = useState<Array<{ voiceId: string; name: string; modelUri: string; owner: string; isOwned?: boolean }>>([]);
   const [ttsLoading, setTtsLoading] = useState(false);
   const [ttsAudioUrl, setTtsAudioUrl] = useState<string | null>(null);
+  const [isVoiceTyping, setIsVoiceTyping] = useState(false);
+  const [isVoiceTypingCloned, setIsVoiceTypingCloned] = useState(false);
+  const speechRecognitionRef = useRef<any>(null);
+  const speechRecognitionClonedRef = useRef<any>(null);
 
   // ------------------- Voice Model Processing (Shelby) -------------------
   const { address, isConnected } = useAptosWallet();
@@ -197,6 +201,161 @@ const Upload = () => {
       clearInterval(interval);
     };
   }, [ownVoiceMetadata, address, selectedPurchasedVoice]); // Include ownVoiceMetadata in deps
+
+  // ------------------- Voice Typing (Speech-to-Text) -------------------
+  // Check if Speech Recognition API is available
+  const isSpeechRecognitionAvailable = () => {
+    return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+  };
+
+  const getSpeechRecognition = (): any => {
+    if ('SpeechRecognition' in window) {
+      return new (window as any).SpeechRecognition();
+    } else if ('webkitSpeechRecognition' in window) {
+      return new (window as any).webkitSpeechRecognition();
+    }
+    return null;
+  };
+
+  // Start voice typing for purchased voices TTS
+  const startVoiceTyping = () => {
+    if (!isSpeechRecognitionAvailable()) {
+      toast.error("Voice typing is not supported in your browser. Please use Chrome, Edge, or Safari.");
+      return;
+    }
+
+    const recognition = getSpeechRecognition();
+    if (!recognition) {
+      toast.error("Speech recognition not available");
+      return;
+    }
+
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsVoiceTyping(true);
+      toast.info("Listening... Speak now");
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      setTtsText((prev) => prev + finalTranscript + interimTranscript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      if (event.error === 'no-speech') {
+        toast.error("No speech detected. Please try again.");
+      } else if (event.error === 'not-allowed') {
+        toast.error("Microphone permission denied. Please allow microphone access.");
+      } else {
+        toast.error(`Speech recognition error: ${event.error}`);
+      }
+      stopVoiceTyping();
+    };
+
+    recognition.onend = () => {
+      setIsVoiceTyping(false);
+    };
+
+    speechRecognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const stopVoiceTyping = () => {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
+    setIsVoiceTyping(false);
+  };
+
+  // Start voice typing for cloned voice TTS
+  const startVoiceTypingCloned = () => {
+    if (!isSpeechRecognitionAvailable()) {
+      toast.error("Voice typing is not supported in your browser. Please use Chrome, Edge, or Safari.");
+      return;
+    }
+
+    const recognition = getSpeechRecognition();
+    if (!recognition) {
+      toast.error("Speech recognition not available");
+      return;
+    }
+
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsVoiceTypingCloned(true);
+      toast.info("Listening... Speak now");
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      setTtsTextForCloned((prev) => prev + finalTranscript + interimTranscript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      if (event.error === 'no-speech') {
+        toast.error("No speech detected. Please try again.");
+      } else if (event.error === 'not-allowed') {
+        toast.error("Microphone permission denied. Please allow microphone access.");
+      } else {
+        toast.error(`Speech recognition error: ${event.error}`);
+      }
+      stopVoiceTypingCloned();
+    };
+
+    recognition.onend = () => {
+      setIsVoiceTypingCloned(false);
+    };
+
+    speechRecognitionClonedRef.current = recognition;
+    recognition.start();
+  };
+
+  const stopVoiceTypingCloned = () => {
+    if (speechRecognitionClonedRef.current) {
+      speechRecognitionClonedRef.current.stop();
+      speechRecognitionClonedRef.current = null;
+    }
+    setIsVoiceTypingCloned(false);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopVoiceTyping();
+      stopVoiceTypingCloned();
+    };
+  }, []);
 
   // ------------------- TTS Generation with Available Voices -------------------
   const handleGenerateTTS = async () => {
@@ -517,12 +676,45 @@ const Upload = () => {
                       </p>
                     )}
                   </div>
-                  <Textarea
-                    value={ttsText}
-                    onChange={(e) => setTtsText(e.target.value)}
-                    placeholder="Type text here to generate speech with your purchased voice..."
-                    className="min-h-[100px]"
-                  />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="tts-text">Enter Text</Label>
+                      {isSpeechRecognitionAvailable() && (
+                        <Button
+                          type="button"
+                          variant={isVoiceTyping ? "destructive" : "outline"}
+                          size="sm"
+                          onClick={isVoiceTyping ? stopVoiceTyping : startVoiceTyping}
+                          disabled={ttsLoading}
+                        >
+                          {isVoiceTyping ? (
+                            <>
+                              <Mic className="h-4 w-4 mr-2 animate-pulse" />
+                              Stop Voice Typing
+                            </>
+                          ) : (
+                            <>
+                              <Mic className="h-4 w-4 mr-2" />
+                              Voice Typing
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                    <Textarea
+                      id="tts-text"
+                      value={ttsText}
+                      onChange={(e) => setTtsText(e.target.value)}
+                      placeholder="Type text here or use voice typing to generate speech with your purchased voice..."
+                      className="min-h-[100px]"
+                    />
+                    {isVoiceTyping && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Mic className="h-3 w-3 animate-pulse" />
+                        Listening... Speak clearly into your microphone
+                      </p>
+                    )}
+                  </div>
                   <Button 
                     onClick={handleGenerateTTS} 
                     disabled={ttsLoading || !selectedPurchasedVoice || !isConnected} 
@@ -694,14 +886,43 @@ const Upload = () => {
                   </div>
                   
                   <div className="space-y-3 pt-3 border-t border-green-200 dark:border-green-800">
-                    <Label htmlFor="clone-tts-text">Step 5: Generate Text-to-Speech</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="clone-tts-text">Step 5: Generate Text-to-Speech</Label>
+                      {isSpeechRecognitionAvailable() && (
+                        <Button
+                          type="button"
+                          variant={isVoiceTypingCloned ? "destructive" : "outline"}
+                          size="sm"
+                          onClick={isVoiceTypingCloned ? stopVoiceTypingCloned : startVoiceTypingCloned}
+                          disabled={ttsLoadingForCloned}
+                        >
+                          {isVoiceTypingCloned ? (
+                            <>
+                              <Mic className="h-4 w-4 mr-2 animate-pulse" />
+                              Stop Voice Typing
+                            </>
+                          ) : (
+                            <>
+                              <Mic className="h-4 w-4 mr-2" />
+                              Voice Typing
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
                     <Textarea
                       id="clone-tts-text"
                       value={ttsTextForCloned}
                       onChange={(e) => setTtsTextForCloned(e.target.value)}
-                      placeholder="Enter text you want your cloned voice to speak..."
+                      placeholder="Enter text you want your cloned voice to speak, or use voice typing..."
                       className="min-h-[100px]"
                     />
+                    {isVoiceTypingCloned && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Mic className="h-3 w-3 animate-pulse" />
+                        Listening... Speak clearly into your microphone
+                      </p>
+                    )}
                     <Button 
                       onClick={handleGenerateTTSWithCloned} 
                       disabled={ttsLoadingForCloned || !ttsTextForCloned.trim()} 

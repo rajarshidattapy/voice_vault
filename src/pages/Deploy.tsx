@@ -27,7 +27,7 @@ const Deploy = () => {
                   v2 Coming Soon!
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                  v2 coming with V3 Labs giving you access to deploy your own voice agents chain!
+                  v2 coming with V3 Labs giving you access to deploy your own voice agents onchain!
                 </p>
               </div>
             </CardContent>
