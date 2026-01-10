@@ -4,28 +4,33 @@ import { VoiceRegistrationForm } from "@/components/voice/VoiceRegistrationForm"
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Sparkles, Download, Loader2, Mic2 } from "lucide-react";
+import { Sparkles, Download, Loader2, Mic2, Upload as UploadIcon } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getPurchasedVoices } from "@/lib/purchasedVoices";
+import { useAptosWallet } from "@/hooks/useAptosWallet";
+// Note: buildShelbyUri is imported but not used directly as backend handles URI generation
 
 const Upload = () => {
-  // ------------------- ElevenLabs TTS -------------------
+  // ------------------- TTS with Purchased Voices -------------------
   const [ttsText, setTtsText] = useState("");
-  const [ttsVoiceId, setTtsVoiceId] = useState<string>("21m00Tcm4TlvDq8ikWAM"); // Default: Rachel
-  const [availableVoices, setAvailableVoices] = useState<Array<{ voice_id: string; name: string }>>([]);
+  const [selectedPurchasedVoice, setSelectedPurchasedVoice] = useState<string>(""); // modelUri of selected voice
+  const [purchasedVoices, setPurchasedVoices] = useState<Array<{ voiceId: string; name: string; modelUri: string; owner: string }>>([]);
   const [ttsLoading, setTtsLoading] = useState(false);
   const [ttsAudioUrl, setTtsAudioUrl] = useState<string | null>(null);
 
-  // ------------------- Voice Cloning with ElevenLabs -------------------
+  // ------------------- Voice Model Processing (Shelby) -------------------
+  const { address, isConnected } = useAptosWallet();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
-  const [cloneText, setCloneText] = useState("");
-  const [cloneLoading, setCloneLoading] = useState(false);
-  const [clonedUrl, setClonedUrl] = useState<string | null>(null);
-  const [savedVoiceId, setSavedVoiceId] = useState<string | null>(localStorage.getItem("eleven_voice_id"));
+  const [voiceName, setVoiceName] = useState("");
+  const [voiceDescription, setVoiceDescription] = useState("");
+  const [processingLoading, setProcessingLoading] = useState(false);
+  const [processedVoiceUri, setProcessedVoiceUri] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -63,33 +68,58 @@ const Upload = () => {
     toast.info("Recording stopped");
   };
 
-  // ------------------- Load available ElevenLabs voices on mount -------------------
+  // ------------------- Load purchased voices on mount -------------------
   useEffect(() => {
-    const loadVoices = async () => {
+    const loadPurchasedVoices = () => {
       try {
-        const { backendApi } = await import("@/lib/api");
-        const voicesData = await backendApi.getElevenLabsVoices();
-        setAvailableVoices(voicesData.voices || []);
-        // Set default voice if available
-        if (voicesData.voices?.length > 0 && !ttsVoiceId) {
-          setTtsVoiceId(voicesData.voices[0].voice_id);
+        const purchased = getPurchasedVoices();
+        const voices = purchased.map((v) => ({
+          voiceId: v.voiceId,
+          name: v.name,
+          modelUri: v.modelUri,
+          owner: v.owner,
+        }));
+        setPurchasedVoices(voices);
+        // Set default voice if available and none is selected
+        if (voices.length > 0 && !selectedPurchasedVoice) {
+          setSelectedPurchasedVoice(voices[0].modelUri);
         }
-      } catch (err) {
-        console.error("Failed to load voices:", err);
-        // Continue with default voice
+      } catch (error) {
+        console.error("Error loading purchased voices:", error);
+        setPurchasedVoices([]);
       }
     };
-    loadVoices();
-  }, []);
+    loadPurchasedVoices();
+    
+    // Refresh when storage changes (from other tabs)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "voicevault_purchased_voices") {
+        loadPurchasedVoices();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also check periodically for same-tab changes (e.g., after purchase)
+    const interval = setInterval(loadPurchasedVoices, 2000);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []); // Empty deps - only run on mount
 
-  // ------------------- ElevenLabs TTS -------------------
-  const handleElevenLabsTTS = async () => {
+  // ------------------- TTS Generation with Purchased Voices -------------------
+  const handleGenerateTTS = async () => {
     if (!ttsText.trim()) {
       toast.error("Please enter text to generate");
       return;
     }
-    if (!ttsVoiceId) {
-      toast.error("Please select a voice");
+    if (!selectedPurchasedVoice) {
+      toast.error("Please select a purchased voice");
+      return;
+    }
+    if (!isConnected || !address) {
+      toast.error("Please connect your wallet to use purchased voices");
       return;
     }
 
@@ -97,8 +127,14 @@ const Upload = () => {
     try {
       const { backendApi } = await import("@/lib/api");
       toast.info("Generating speech...");
-      // Use unified TTS endpoint
-      const audioBlob = await backendApi.generateTTS(`eleven:${ttsVoiceId}`, ttsText);
+      
+      // Use unified TTS endpoint with requesterAccount for Shelby URIs
+      // The backend will verify Aptos access before loading from Shelby
+      const audioBlob = await backendApi.generateTTS(
+        selectedPurchasedVoice, 
+        ttsText,
+        address.toString() // Pass requester account for access verification
+      );
       const url = URL.createObjectURL(audioBlob);
       setTtsAudioUrl(url);
       toast.success("Speech generated successfully!");
@@ -123,87 +159,56 @@ const Upload = () => {
     }
   };
 
-  // ------------------- Generate TTS with Voice Cloning -------------------
-  const handleGenerateTTS = async () => {
-    if (!cloneText.trim()) {
-      toast.error("Please enter text to generate");
+  // ------------------- Process Audio and Upload to Shelby -------------------
+  const handleProcessVoice = async () => {
+    if (!isConnected || !address) {
+      toast.error("Please connect your wallet first");
       return;
     }
-    if (!selectedFile && !savedVoiceId) {
+
+    if (!selectedFile) {
       toast.error("Please record or upload an audio file first");
       return;
     }
 
-    setCloneLoading(true);
+    if (!voiceName.trim()) {
+      toast.error("Please enter a voice name");
+      return;
+    }
+
+    setProcessingLoading(true);
     try {
       const { backendApi } = await import("@/lib/api");
-      let voiceId = savedVoiceId;
+      
+      // Generate unique voice ID
+      const voiceId = `voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const account = address.toString();
+      const namespace = "voices";
 
-      // Clone voice if we don't have a saved voice ID
-      if (!voiceId) {
-        if (!selectedFile) {
-          throw new Error("No audio file selected");
-        }
+      // Process audio, generate voice model bundle, and upload to Shelby (all in one step)
+      toast.info("Processing audio and generating voice model...");
+      const processResult = await backendApi.processVoiceModel(
+        selectedFile,
+        voiceName.trim(),
+        account,
+        voiceId,
+        voiceDescription.trim() || undefined
+      );
 
-        toast.info("Cloning voice...");
-        const cloneResult = await backendApi.cloneVoice(
-          `VoiceVault_${Date.now()}`,
-          [selectedFile]
-        );
+      // Auto-fill Registration form with Shelby URI
+      setAutoName(voiceName.trim());
+      setAutoModelUri(processResult.uri);
+      setProcessedVoiceUri(processResult.uri);
 
-        voiceId = cloneResult.voice_id;
-        localStorage.setItem("eleven_voice_id", voiceId);
-        setSavedVoiceId(voiceId);
-        toast.success("Voice cloned successfully!");
-      }
-
-      // Auto-fill Registration form
-      setAutoName(`VoiceVault ${voiceId.slice(0, 4)}`);
-      setAutoModelUri(`eleven:${voiceId}`);
-
-      // Generate speech with cloned voice using unified endpoint
-      toast.info("Generating speech...");
-      try {
-        const audioBlob = await backendApi.generateTTS(`eleven:${voiceId}`, cloneText);
-        const url = URL.createObjectURL(audioBlob);
-        setClonedUrl(url);
-        toast.success("Audio generated successfully!");
-      } catch (ttsError: any) {
-        // If voice not found, clear saved voice and re-clone
-        if (ttsError.message?.includes('voice_not_found') || ttsError.message?.includes('not found')) {
-          console.warn("Saved voice ID is invalid, clearing and re-cloning...");
-          localStorage.removeItem("eleven_voice_id");
-          setSavedVoiceId(null);
-          
-          if (!selectedFile) {
-            throw new Error("The saved voice no longer exists. Please record or upload a new audio file to clone.");
-          }
-
-          toast.info("Voice expired, cloning new voice...");
-          const cloneResult = await backendApi.cloneVoice(
-            `VoiceVault_${Date.now()}`,
-            [selectedFile]
-          );
-
-          voiceId = cloneResult.voice_id;
-          localStorage.setItem("eleven_voice_id", voiceId);
-          setSavedVoiceId(voiceId);
-          toast.success("Voice re-cloned successfully!");
-
-          // Retry TTS with new voice using unified endpoint
-          const audioBlob = await backendApi.generateTTS(`eleven:${voiceId}`, cloneText);
-          const url = URL.createObjectURL(audioBlob);
-          setClonedUrl(url);
-          toast.success("Audio generated successfully!");
-        } else {
-          throw ttsError;
-        }
-      }
+      toast.success("Voice model processed and uploaded to Shelby successfully!", {
+        description: `URI: ${processResult.uri}`,
+        duration: 5000,
+      });
     } catch (err: any) {
-      console.error("Clone/TTS error:", err);
-      toast.error(err.message || "Failed to clone voice or generate audio");
+      console.error("Voice processing error:", err);
+      toast.error(err.message || "Failed to process voice model");
     } finally {
-      setCloneLoading(false);
+      setProcessingLoading(false);
     }
   };
 
@@ -214,78 +219,129 @@ const Upload = () => {
       <main className="pt-32 pb-16">
         <div className="container max-w-5xl mx-auto px-4 space-y-16">
 
-          {/* ------------------- ElevenLabs TTS Section ------------------- */}
+          {/* ------------------- TTS with Purchased Voices Section ------------------- */}
           <Card>
             <CardHeader>
-              <CardTitle>Text → Speech</CardTitle>
-              <CardDescription>Generate speech using Text</CardDescription>
+              <CardTitle>Text → Speech with Purchased Voices</CardTitle>
+              <CardDescription>
+                Generate speech using voices you've purchased from the marketplace
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="tts-voice">Select Voice</Label>
-                <Select value={ttsVoiceId} onValueChange={setTtsVoiceId}>
-                  <SelectTrigger id="tts-voice">
-                    <SelectValue placeholder="Select a voice" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableVoices.length > 0 ? (
-                      availableVoices.map((voice) => (
-                        <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                          {voice.name}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value={ttsVoiceId}>Rachel (Default)</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Textarea
-                value={ttsText}
-                onChange={(e) => setTtsText(e.target.value)}
-                placeholder="Type text here to generate speech..."
-                className="min-h-[100px]"
-              />
-              <Button onClick={handleElevenLabsTTS} disabled={ttsLoading} className="w-full">
-                {ttsLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
-                Generate Speech
-              </Button>
-              {ttsAudioUrl && (
-                <div className="space-y-3 bg-muted/40 p-4 rounded-xl">
-                  <audio controls src={ttsAudioUrl} className="w-full" />
+              {!isConnected && (
+                <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    ⚠️ Please connect your wallet to use purchased voices.
+                  </p>
+                </div>
+              )}
+
+              {purchasedVoices.length === 0 ? (
+                <div className="p-6 border-2 border-dashed rounded-lg text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    No purchased voices yet.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Visit the Marketplace to buy voices and use them here for TTS generation.
+                  </p>
                   <Button
                     variant="outline"
                     onClick={() => {
-                      const a = document.createElement("a");
-                      a.href = ttsAudioUrl;
-                      a.download = `voicevault-tts-${Date.now()}.mp3`;
-                      a.click();
+                      window.location.href = "/marketplace";
                     }}
-                    className="w-full"
+                    className="mt-2"
                   >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download Audio
+                    Go to Marketplace
                   </Button>
                 </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="purchased-voice">Select Purchased Voice</Label>
+                    <Select value={selectedPurchasedVoice} onValueChange={setSelectedPurchasedVoice}>
+                      <SelectTrigger id="purchased-voice">
+                        <SelectValue placeholder="Select a purchased voice" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {purchasedVoices.map((voice) => (
+                          <SelectItem key={voice.modelUri} value={voice.modelUri}>
+                            {voice.name} ({voice.modelUri.startsWith("shelby://") ? "Shelby" : "Other"})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Textarea
+                    value={ttsText}
+                    onChange={(e) => setTtsText(e.target.value)}
+                    placeholder="Type text here to generate speech with your purchased voice..."
+                    className="min-h-[100px]"
+                  />
+                  <Button 
+                    onClick={handleGenerateTTS} 
+                    disabled={ttsLoading || !selectedPurchasedVoice || !isConnected} 
+                    className="w-full"
+                  >
+                    {ttsLoading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-5 w-5 mr-2" />
+                        Generate Speech
+                      </>
+                    )}
+                  </Button>
+                  {ttsAudioUrl && (
+                    <div className="space-y-3 bg-muted/40 p-4 rounded-xl">
+                      <audio controls src={ttsAudioUrl} className="w-full" />
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const a = document.createElement("a");
+                          a.href = ttsAudioUrl;
+                          a.download = `voicevault-tts-${Date.now()}.mp3`;
+                          a.click();
+                        }}
+                        className="w-full"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Audio
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
 
-          {/* ------------------- Voice Cloning Section (ElevenLabs) ------------------- */}
+          {/* ------------------- Voice Model Processing (Shelby) ------------------- */}
           <Card>
             <CardHeader>
-              <CardTitle>Clone Your Voice</CardTitle>
-              <CardDescription>Record or upload audio → Clone your voice → Generate unlimited speech</CardDescription>
+              <CardTitle>Step 2: Process Your Voice Model</CardTitle>
+              <CardDescription>
+                Upload audio → Generate voice embedding → Store on Shelby → Register on Aptos blockchain
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {!isConnected && (
+                <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                    ⚠️ Please connect your wallet to process and register your voice model.
+                  </p>
+                </div>
+              )}
+
               {/* Audio Input Options */}
               <div className="space-y-4">
-                <Label>Audio Reference (Record or Upload)</Label>
+                <Label>Audio Input (Record or Upload)</Label>
                 
                 {/* Mic Recording */}
                 <div className="border-2 border-dashed rounded-lg p-6 text-center space-y-4">
                   {!recording ? (
-                    <Button onClick={startRecording} className="w-full">
+                    <Button onClick={startRecording} disabled={!isConnected} className="w-full">
                       <Mic2 className="h-5 w-5 mr-2" />
                       Start Recording
                     </Button>
@@ -305,13 +361,16 @@ const Upload = () => {
                       onChange={handleFileUpload}
                       className="hidden"
                       id="audio-upload"
+                      disabled={!isConnected}
                     />
                     <Button
                       variant="outline"
                       onClick={() => document.getElementById("audio-upload")?.click()}
                       className="w-full"
+                      disabled={!isConnected}
                     >
-                      📁 Upload Audio File
+                      <UploadIcon className="h-5 w-5 mr-2" />
+                      Upload Audio File
                     </Button>
                   </div>
                   
@@ -320,59 +379,73 @@ const Upload = () => {
                       <p className="text-sm font-medium text-primary">
                         ✓ {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
                       </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Supported formats: MP3, WAV, Opus
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Text Input */}
+              {/* Voice Name Input */}
               <div className="space-y-2">
-                <Label htmlFor="clone-text">Text to speak with your cloned voice</Label>
-                <Textarea
-                  id="clone-text"
-                  value={cloneText}
-                  onChange={(e) => setCloneText(e.target.value)}
-                  placeholder="Enter the text you want to generate in your voice..."
-                  className="min-h-[100px]"
+                <Label htmlFor="voice-name">
+                  Voice Name <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="voice-name"
+                  placeholder="e.g., My Professional Voice"
+                  value={voiceName}
+                  onChange={(e) => setVoiceName(e.target.value)}
+                  disabled={!isConnected}
+                  required
                 />
               </div>
 
-              {/* Generate Button */}
+              {/* Voice Description Input */}
+              <div className="space-y-2">
+                <Label htmlFor="voice-description">Voice Description (Optional)</Label>
+                <Textarea
+                  id="voice-description"
+                  placeholder="Describe your voice model..."
+                  value={voiceDescription}
+                  onChange={(e) => setVoiceDescription(e.target.value)}
+                  className="min-h-[80px]"
+                  disabled={!isConnected}
+                />
+              </div>
+
+              {/* Process Button */}
               <Button 
-                onClick={handleGenerateTTS} 
-                disabled={cloneLoading || !selectedFile || !cloneText.trim()} 
+                onClick={handleProcessVoice} 
+                disabled={processingLoading || !selectedFile || !voiceName.trim() || !isConnected} 
                 className="w-full"
               >
-                {cloneLoading ? (
+                {processingLoading ? (
                   <>
                     <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                    Generating...
+                    Processing & Uploading...
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-5 w-5 mr-2" />
-                    Generate Speech
+                    Process Voice & Upload to Shelby
                   </>
                 )}
               </Button>
 
-              {/* Audio Output */}
-              {clonedUrl && (
-                <div className="space-y-3 bg-muted/40 p-6 rounded-xl">
-                  <audio controls src={clonedUrl} className="w-full" />
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const a = document.createElement("a");
-                      a.href = clonedUrl;
-                      a.download = `voicevault-cloned-${Date.now()}.wav`;
-                      a.click();
-                    }}
-                    className="w-full"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download Audio
-                  </Button>
+              {/* Success Message */}
+              {processedVoiceUri && (
+                <div className="space-y-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 rounded-lg">
+                  <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                    ✓ Voice model processed and uploaded to Shelby successfully!
+                  </p>
+                  <p className="text-xs text-green-700 dark:text-green-300 break-all">
+                    Shelby URI: {processedVoiceUri}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    The Model URI has been auto-filled in the registration form below.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -381,13 +454,18 @@ const Upload = () => {
           {/* ------------------- Registration Form (AUTOFILLS) ------------------- */}
           <Card>
             <CardHeader>
-              <CardTitle>Step 3: Register Your Voice Model on Blockchain</CardTitle>
+              <CardTitle>Step 3: Register Your Voice Model on Aptos Blockchain</CardTitle>
               <CardDescription>
-                After cloning your voice above, register it on Aptos blockchain to make it available in the marketplace.
+                After processing and uploading your voice model to Shelby, register it on Aptos blockchain to make it available in the marketplace.
                 <br />
                 {autoModelUri && (
                   <span className="text-sm text-primary mt-2 block">
-                    ✓ Model URI auto-filled: {autoModelUri}
+                    ✓ Model URI auto-filled: <code className="text-xs bg-muted px-1 py-0.5 rounded">{autoModelUri}</code>
+                  </span>
+                )}
+                {!autoModelUri && (
+                  <span className="text-sm text-muted-foreground mt-2 block">
+                    Complete Step 2 above to process your voice model and get a Shelby URI.
                   </span>
                 )}
               </CardDescription>

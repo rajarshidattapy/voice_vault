@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { aptosClient } from "./useAptosWallet";
 import { CONTRACTS, octasToApt } from "@/lib/contracts";
 import { VoiceMetadata } from "./useVoiceMetadata";
+import { parseMoveString } from "@/lib/moveUtils";
 
 /**
  * Fetch metadata for multiple voice addresses in parallel
@@ -25,27 +26,29 @@ export function useMultipleVoiceMetadata(addresses: string[]) {
 
       try {
         // Create promises for all addresses
+        const resourceType = `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::VoiceIdentity`;
         const promises = addresses.map(async (address) => {
           try {
-            const result = await aptosClient.view({
-              payload: {
-                function: `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::get_metadata`,
-                typeArguments: [],
-                functionArguments: [address],
-              },
+            // Query the VoiceIdentity resource directly (since get_metadata is not a view function)
+            const resources = await aptosClient.getAccountResources({
+              accountAddress: address,
             });
 
-            // Parse the result tuple
-            const [owner, voiceId, name, modelUri, rights, priceInOctas, createdAt] = result;
+            const voiceResource = resources.find((r) => r.type === resourceType);
+            if (!voiceResource || !voiceResource.data) {
+              return null;
+            }
+
+            const data = voiceResource.data as any;
 
             return {
-              owner: owner as string,
-              voiceId: voiceId as string,
-              name: name as string,
-              modelUri: modelUri as string,
-              rights: rights as string,
-              pricePerUse: octasToApt(Number(priceInOctas)),
-              createdAt: Number(createdAt),
+              owner: data.owner as string,
+              voiceId: data.voice_id?.toString() || "0",
+              name: parseMoveString(data.name),
+              modelUri: parseMoveString(data.model_uri),
+              rights: parseMoveString(data.rights),
+              pricePerUse: octasToApt(Number(data.price_per_use || 0)),
+              createdAt: Number(data.created_at || 0),
             } as VoiceMetadata;
           } catch (err) {
             console.warn(`Failed to fetch metadata for ${address}:`, err);

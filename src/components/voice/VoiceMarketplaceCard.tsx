@@ -1,15 +1,18 @@
 import { useState, useEffect } from "react";
 import { VoiceMetadata } from "@/hooks/useVoiceMetadata";
+import { VoiceWithShelbyMetadata } from "@/hooks/useVoicesWithShelbyMetadata";
 import { usePayForInference } from "@/hooks/usePayForInference";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, Coins } from "lucide-react";
+import { Loader2, ShoppingCart, Coins, Play } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatAddress } from "@/lib/aptos";
+import { isShelbyUri } from "@/lib/shelby";
+import { isVoicePurchased } from "@/lib/purchasedVoices";
 
 interface VoiceMarketplaceCardProps {
-  voice: VoiceMetadata;
+  voice: VoiceWithShelbyMetadata;
   onPaymentSuccess?: (txHash: string, voice: VoiceMetadata) => void;
 }
 
@@ -24,6 +27,8 @@ export function VoiceMarketplaceCard({ voice, onPaymentSuccess }: VoiceMarketpla
   } | null>(null);
 
   const price = voice.pricePerUse;
+  const isPurchased = isVoicePurchased(voice.voiceId, voice.owner);
+  const isShelby = isShelbyUri(voice.modelUri);
   
   // Fetch breakdown from backend when dialog opens, fallback to local calculation
   useEffect(() => {
@@ -79,11 +84,16 @@ export function VoiceMarketplaceCard({ voice, onPaymentSuccess }: VoiceMarketpla
       <Card className="hover:shadow-lg transition-shadow">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            {voice.name}
+            <span>{voice.name}</span>
             <div className="flex items-center gap-2">
-              {voice.modelUri.startsWith("eleven:") && (
+              {isShelby && (
                 <Badge variant="outline" className="text-xs">
-                  ElevenLabs
+                  Shelby
+                </Badge>
+              )}
+              {isPurchased && (
+                <Badge variant="default" className="text-xs bg-green-600">
+                  Purchased
                 </Badge>
               )}
               <Badge variant="secondary">
@@ -92,45 +102,69 @@ export function VoiceMarketplaceCard({ voice, onPaymentSuccess }: VoiceMarketpla
             </div>
           </CardTitle>
           <CardDescription>
-            {voice.modelUri.startsWith("eleven:") ? (
-              <>Premium voice by ElevenLabs</>
-            ) : (
-              <>by {formatAddress(voice.owner)}</>
-            )}
+            {voice.description || `by ${formatAddress(voice.owner)}`}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="text-sm">
-            <span className="text-muted-foreground">Rights:</span>{" "}
-            <span className="font-medium">{voice.rights}</span>
-          </div>
-          <div className="text-sm">
-            <span className="text-muted-foreground">Voice ID:</span>{" "}
-            <span className="font-mono text-xs">{voice.voiceId}</span>
-          </div>
-          <div className="text-sm">
-            <span className="text-muted-foreground">Model:</span>{" "}
-            <span className="font-mono text-xs truncate block">{voice.modelUri}</span>
+        <CardContent className="space-y-3">
+          {voice.previewAudioUrl && (
+            <div className="space-y-2">
+              <span className="text-xs text-muted-foreground">Preview:</span>
+              <audio 
+                src={voice.previewAudioUrl} 
+                controls 
+                className="w-full h-8"
+                preload="metadata"
+              />
+            </div>
+          )}
+          <div className="text-sm space-y-1">
+            <div>
+              <span className="text-muted-foreground">Rights:</span>{" "}
+              <span className="font-medium">{voice.rights}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Creator:</span>{" "}
+              <span className="font-mono text-xs">{formatAddress(voice.owner)}</span>
+            </div>
+            {isShelby && (
+              <div>
+                <span className="text-muted-foreground">Storage:</span>{" "}
+                <span className="text-xs text-green-600">Shelby (Decentralized)</span>
+              </div>
+            )}
           </div>
         </CardContent>
         <CardFooter>
-          <Button
-            onClick={() => setShowPaymentDialog(true)}
-            disabled={isPaying}
-            className="w-full"
-          >
-            {isPaying ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <Play className="mr-2 h-4 w-4" />
-                Use Voice
-              </>
-            )}
-          </Button>
+          {isPurchased ? (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                window.location.href = "/upload";
+              }}
+            >
+              <Play className="mr-2 h-4 w-4" />
+              Use in Upload Page
+            </Button>
+          ) : (
+            <Button
+              onClick={() => setShowPaymentDialog(true)}
+              disabled={isPaying}
+              className="w-full"
+            >
+              {isPaying ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Buy Voice
+                </>
+              )}
+            </Button>
+          )}
         </CardFooter>
       </Card>
 

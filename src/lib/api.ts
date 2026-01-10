@@ -18,11 +18,14 @@ export const BACKEND_CONFIG = {
     ELEVENLABS_CLONE: '/api/elevenlabs/clone',
     // OpenAI TTS
     OPENAI_SPEAK: '/api/openai/speak',
-    // Unified TTS (handles both ElevenLabs and OpenAI)
+    // Unified TTS (handles both ElevenLabs, OpenAI, and Shelby)
     UNIFIED_TTS: '/api/tts/generate',
     // Payment
     PAYMENT_BREAKDOWN: '/api/payment/breakdown',
-    // Voice Registry
+    // Voice Model Processing & Shelby Storage
+    VOICE_PROCESS: '/api/voice/process',
+    SHELBY_UPLOAD: '/api/shelby/upload',
+    SHELBY_DOWNLOAD: '/api/shelby/download',
   },
 };
 
@@ -135,19 +138,25 @@ export const backendApi = {
   },
 
   /**
-   * Generate speech using unified TTS endpoint (handles both ElevenLabs and OpenAI)
-   * @param modelUri Model URI (e.g., "eleven:voiceId" or "openai:voiceId")
+   * Generate speech using unified TTS endpoint (handles ElevenLabs, OpenAI, and Shelby)
+   * @param modelUri Model URI (e.g., "eleven:voiceId", "openai:voiceId", or "shelby://...")
    * @param text Text to convert to speech
+   * @param requesterAccount Aptos account address (required for Shelby URIs)
    * @returns Audio blob
    */
-  async generateTTS(modelUri: string, text: string): Promise<Blob> {
+  async generateTTS(modelUri: string, text: string, requesterAccount?: string): Promise<Blob> {
     const url = `${BACKEND_CONFIG.BASE_URL}${BACKEND_CONFIG.ENDPOINTS.UNIFIED_TTS}`;
     console.log('[API] Generating TTS with unified endpoint:', { url, modelUri, textLength: text.length });
+
+    const body: any = { modelUri, text };
+    if (requesterAccount) {
+      body.requesterAccount = requesterAccount;
+    }
 
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ modelUri, text }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -217,6 +226,132 @@ export const backendApi = {
     }
 
     return response.json();
+  },
+
+  /**
+   * Process audio file and generate voice model bundle
+   * @param audioFile Audio file to process
+   * @param name Voice name
+   * @param description Voice description (optional)
+   * @param owner Aptos account address (owner)
+   * @param voiceId Unique voice identifier
+   * @returns Bundle metadata (config and meta)
+   */
+  async processVoiceModel(
+    audioFile: File,
+    name: string,
+    owner: string,
+    voiceId: string,
+    description?: string
+  ) {
+    const url = `${BACKEND_CONFIG.BASE_URL}${BACKEND_CONFIG.ENDPOINTS.VOICE_PROCESS}`;
+    
+    const formData = new FormData();
+    formData.append('audio', audioFile);
+    formData.append('name', name);
+    formData.append('owner', owner);
+    formData.append('voiceId', voiceId);
+    if (description) {
+      formData.append('description', description);
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText || 'Voice processing failed' };
+      }
+      throw new Error(errorData.error || errorData.message || 'Voice processing failed');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Upload voice bundle to Shelby
+   * @param uri Shelby URI
+   * @param account Aptos account address
+   * @param bundleFiles Bundle files (embedding.bin, config.json, meta.json, preview.wav)
+   * @returns Upload result with final URI
+   */
+  async uploadToShelby(
+    uri: string,
+    account: string,
+    bundleFiles: {
+      embedding: Blob;
+      config: Blob;
+      meta: Blob;
+      preview?: Blob;
+    }
+  ) {
+    const url = `${BACKEND_CONFIG.BASE_URL}${BACKEND_CONFIG.ENDPOINTS.SHELBY_UPLOAD}`;
+    
+    const formData = new FormData();
+    formData.append('embedding.bin', bundleFiles.embedding, 'embedding.bin');
+    formData.append('config.json', bundleFiles.config, 'config.json');
+    formData.append('meta.json', bundleFiles.meta, 'meta.json');
+    if (bundleFiles.preview) {
+      formData.append('preview.wav', bundleFiles.preview, 'preview.wav');
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-Shelby-Uri': uri,
+        'X-Aptos-Account': account,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText || 'Shelby upload failed' };
+      }
+      throw new Error(errorData.error || errorData.message || 'Shelby upload failed');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Download file from Shelby
+   * @param uri Shelby URI
+   * @param filename File to download (e.g., "meta.json", "embedding.bin", "preview.wav")
+   * @param requesterAccount Aptos account address (for access verification)
+   * @returns File data as ArrayBuffer
+   */
+  async downloadFromShelby(uri: string, filename: string, requesterAccount?: string): Promise<ArrayBuffer> {
+    const url = `${BACKEND_CONFIG.BASE_URL}${BACKEND_CONFIG.ENDPOINTS.SHELBY_DOWNLOAD}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri, filename, requesterAccount }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText || 'Shelby download failed' };
+      }
+      throw new Error(errorData.error || errorData.message || 'Shelby download failed');
+    }
+
+    return response.arrayBuffer();
   },
 
 };

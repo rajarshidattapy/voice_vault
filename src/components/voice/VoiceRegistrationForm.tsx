@@ -10,6 +10,7 @@ import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { addVoiceToRegistry } from "@/lib/voiceRegistry";
 import { useVoiceMetadata } from "@/hooks/useVoiceMetadata";
+import { isShelbyUri, parseShelbyUri } from "@/lib/shelby";
 
 interface VoiceRegistrationFormProps {
   autoName?: string;
@@ -62,8 +63,25 @@ export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: Voic
     }
 
     if (!formData.modelUri.trim()) {
-      toast.error("Model URI is required. Please enter a model URI (e.g., eleven:voiceId or openai:voiceName)", {
-        description: "If you cloned a voice above, the Model URI should be auto-filled",
+      toast.error("Model URI is required. Please enter a Shelby URI", {
+        description: "If you processed your voice model above, the Shelby URI should be auto-filled",
+      });
+      return;
+    }
+
+    // Validate that the URI is a Shelby URI
+    if (!isShelbyUri(formData.modelUri.trim())) {
+      toast.error("Invalid model URI format", {
+        description: "Only Shelby URIs are accepted (format: shelby://<account>/<namespace>/<voice_id>)",
+      });
+      return;
+    }
+
+    // Validate that the Shelby URI matches the connected wallet address
+    const parsedUri = parseShelbyUri(formData.modelUri.trim());
+    if (parsedUri && address && parsedUri.account.toLowerCase() !== address.toString().toLowerCase()) {
+      toast.error("URI account mismatch", {
+        description: "The Shelby URI must belong to your connected wallet address",
       });
       return;
     }
@@ -204,15 +222,17 @@ export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: Voic
             </Label>
             <Input
               id="modelUri"
-              placeholder="e.g., eleven:21m00Tcm4TlvDq8ikWAM, openai:alloy, ipfs://Qm..."
+              placeholder=""
               value={formData.modelUri}
               onChange={(e) => setFormData({ ...formData, modelUri: e.target.value })}
               required
             />
             <p className="text-xs text-muted-foreground">
-              Required. Enter the model URI for your voice. If you cloned a voice above, this should be auto-filled (e.g., "eleven:voiceId").
+              Required. Enter the Shelby URI for your voice model. If you processed your voice above, this should be auto-filled.
               <br />
-              Supported formats: <code className="text-xs">eleven:voiceId</code>, <code className="text-xs">openai:voiceName</code>, <code className="text-xs">ipfs://...</code>
+              Format: <code className="text-xs">shelby://&lt;aptos_account&gt;/voices/&lt;voice_id&gt;</code>
+              <br />
+              Only Shelby URIs are accepted. Process your voice model in Step 2 to get a Shelby URI.
             </p>
           </div>
 

@@ -3,15 +3,11 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, SlidersHorizontal, TrendingUp, Clock, Star } from "lucide-react";
+import { Search, SlidersHorizontal, TrendingUp, Clock, Star, RefreshCw } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { VoiceMetadata } from "@/hooks/useVoiceMetadata";
-import { useMultipleVoiceMetadata } from "@/hooks/useMultipleVoiceMetadata";
+import { useVoicesWithShelbyMetadata } from "@/hooks/useVoicesWithShelbyMetadata";
 import { VoiceMarketplaceCard } from "@/components/voice/VoiceMarketplaceCard";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Loader2, Sparkles, Download } from "lucide-react";
 import { toast } from "sonner";
 import { getVoiceAddresses } from "@/lib/voiceRegistry";
 import { useAptosWallet } from "@/hooks/useAptosWallet";
@@ -25,134 +21,31 @@ const filterTabs = [
   { id: "top-rated", label: "Top Rated", icon: Star },
 ];
 
-// Mock voices for testing - these simulate registered voices on-chain
-const MOCK_VOICES: VoiceMetadata[] = [
-  {
-    owner: "0xed25fa42116e7247381a3168b0de39af2eb7bedf4db94364c41fc7699b1c1a71",
-    voiceId: "1",
-    name: "Alex Sterling",
-    modelUri: "openai:alloy",
-    rights: "commercial",
-    pricePerUse: 0.1,
-    createdAt: Date.now() - 86400000,
-  },
-  {
-    owner: "0x0bf154dc582a43ec543711fba16c44e02cec2f660868f1fa164f1816fa7f1952",
-    voiceId: "2",
-    name: "Luna Rivers",
-    modelUri: "openai:echo",
-    rights: "commercial",
-    pricePerUse: 0.15,
-    createdAt: Date.now() - 172800000,
-  },
-  {
-    owner: "0xed25fa42116e7247381a3168b0de39af2eb7bedf4db94364c41fc7699b1c1a71",
-    voiceId: "3",
-    name: "Marcus Deep",
-    modelUri: "openai:fable",
-    rights: "personal",
-    pricePerUse: 0.08,
-    createdAt: Date.now() - 259200000,
-  },
-  {
-    owner: "0x0bf154dc582a43ec543711fba16c44e02cec2f660868f1fa164f1816fa7f1952",
-    voiceId: "4",
-    name: "Aria Voice",
-    modelUri: "openai:onyx",
-    rights: "commercial",
-    pricePerUse: 0.12,
-    createdAt: Date.now() - 345600000,
-  },
-  {
-    owner: "0xed25fa42116e7247381a3168b0de39af2eb7bedf4db94364c41fc7699b1c1a71",
-    voiceId: "5",
-    name: "Zen Master",
-    modelUri: "openai:nova",
-    rights: "commercial",
-    pricePerUse: 0.2,
-    createdAt: Date.now() - 432000000,
-  },
-  {
-    owner: "0x0bf154dc582a43ec543711fba16c44e02cec2f660868f1fa164f1816fa7f1952",
-    voiceId: "6",
-    name: "Ember Spark",
-    modelUri: "openai:shimmer",
-    rights: "commercial",
-    pricePerUse: 0.09,
-    createdAt: Date.now() - 518400000,
-  },
-];
-
 const Marketplace = () => {
   const { address } = useAptosWallet();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("trending");
   const [voiceAddresses, setVoiceAddresses] = useState<string[]>([]);
-  const [elevenLabsVoices, setElevenLabsVoices] = useState<VoiceMetadata[]>([]);
-  const [isLoadingElevenLabs, setIsLoadingElevenLabs] = useState(false);
-
-  // TTS Dialog state
-  const [selectedVoice, setSelectedVoice] = useState<VoiceMetadata | null>(null);
-  const [paymentTxHash, setPaymentTxHash] = useState<string | null>(null);
-  const [showTTSDialog, setShowTTSDialog] = useState(false);
-  const [ttsText, setTtsText] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
 
   // Load voice addresses from localStorage registry
-  // Note: Voice registration is stored on Aptos blockchain, but we maintain
-  // a local registry for marketplace discovery
+  // Note: These are addresses that have registered voices on-chain
+  // The actual voice metadata is fetched from Aptos (on-chain) and Shelby (meta.json)
+  // In the future, we could query blockchain events to discover all registered voices
   useEffect(() => {
     const addresses = getVoiceAddresses();
     setVoiceAddresses(addresses);
   }, []);
 
-  // Fetch ElevenLabs voices
-  useEffect(() => {
-    const fetchElevenLabsVoices = async () => {
-      setIsLoadingElevenLabs(true);
-      try {
-        const { backendApi } = await import("@/lib/api");
-        const voicesData = await backendApi.getElevenLabsVoices();
-        
-        // Convert ElevenLabs voices to VoiceMetadata format
-        const convertedVoices: VoiceMetadata[] = (voicesData.voices || []).map((voice, index) => ({
-          owner: `0xelevenlabs${voice.voice_id.slice(0, 20)}`, // Placeholder owner address
-          voiceId: voice.voice_id,
-          name: voice.name,
-          modelUri: `eleven:${voice.voice_id}`,
-          rights: "commercial",
-          pricePerUse: 0.05, // Default price for ElevenLabs voices
-          createdAt: Date.now() - (index * 86400000), // Stagger creation dates
-        }));
-        
-        setElevenLabsVoices(convertedVoices);
-      } catch (err) {
-        console.error("Failed to load ElevenLabs voices:", err);
-        // Don't show error to user, just log it
-        setElevenLabsVoices([]);
-      } finally {
-        setIsLoadingElevenLabs(false);
-      }
-    };
-
-    fetchElevenLabsVoices();
-  }, []);
-
-  // Fetch metadata for all registered voices using the optimized hook
-  const { voices: onChainVoices, isLoading: isLoadingOnChain } = useMultipleVoiceMetadata(voiceAddresses);
+  // Fetch voices with metadata from both Aptos (on-chain) and Shelby (meta.json)
+  // Aptos provides: owner, price, rights, modelUri
+  // Shelby provides: name, description, preview audio
+  const { voices: enrichedVoices, isLoading: isLoadingVoices } = useVoicesWithShelbyMetadata(voiceAddresses);
   
-  // Combine on-chain voices, ElevenLabs voices, and mock data
-  const voices = [
-    ...elevenLabsVoices,
-    ...(onChainVoices.length > 0 ? onChainVoices : MOCK_VOICES),
-  ];
-  const isLoading = isLoadingOnChain || isLoadingElevenLabs;
+  // Only show voices registered on-chain (no mock data, no ElevenLabs voices)
+  const voices = enrichedVoices;
+  const isLoading = isLoadingVoices;
 
-  const handleVoiceSelected = async (voice: VoiceMetadata, txHash: string) => {
-    setSelectedVoice(voice);
-    setPaymentTxHash(txHash);
-    
+  const handlePurchaseSuccess = async (voice: VoiceMetadata, txHash: string) => {
     // Track purchased voice in localStorage
     const { addPurchasedVoice } = await import("@/lib/purchasedVoices");
     addPurchasedVoice({
@@ -165,43 +58,16 @@ const Marketplace = () => {
       txHash: txHash,
     });
 
-    // After successful payment, open the TTS dialog directly
-    setShowTTSDialog(true);
-    setGeneratedAudioUrl(null);
-    setTtsText("");
-  };
-
-  const handleGenerateTTS = async () => {
-    if (!ttsText.trim() || !selectedVoice) {
-      toast.error("Please enter text to generate");
-      return;
-    }
-
-    setIsGenerating(true);
-
-    try {
-      const { backendApi } = await import("@/lib/api");
-      
-      // Use unified TTS endpoint that handles both ElevenLabs and OpenAI
-      toast.info("Generating speech...");
-      const audioBlob = await backendApi.generateTTS(selectedVoice.modelUri, ttsText);
-      setGeneratedAudioUrl(URL.createObjectURL(audioBlob));
-      toast.success("Audio generated successfully!");
-    } catch (error: any) {
-      toast.error("Generation failed", {
-        description: error.message || "Unknown error",
-      });
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleDownload = () => {
-    if (!generatedAudioUrl) return;
-    const a = document.createElement("a");
-    a.href = generatedAudioUrl;
-    a.download = `voicevault-${selectedVoice?.name}-${Date.now()}.wav`;
-    a.click();
+    toast.success("Voice purchased successfully!", {
+      description: "You can now use this voice in the Upload page for TTS generation.",
+      duration: 5000,
+      action: {
+        label: "Go to Upload",
+        onClick: () => {
+          window.location.href = "/upload";
+        },
+      },
+    });
   };
 
   return (
@@ -220,8 +86,18 @@ const Marketplace = () => {
                 Voice <span className="gradient-text">Marketplace</span>
               </h1>
               <p className="text-lg text-muted-foreground">
-                Discover unique AI voice models from creators around the world. License instantly, pay per use.
+                Discover unique AI voice models registered on Aptos blockchain. License instantly, pay per use.
               </p>
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-sm text-muted-foreground">
+                  Showing <strong>{voices.length}</strong> voice{voices.length !== 1 ? 's' : ''} registered on-chain
+                </p>
+                {voices.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    • All voices verified on Aptos blockchain
+                  </span>
+                )}
+              </div>
             </div>
 
 
@@ -231,12 +107,30 @@ const Marketplace = () => {
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
-                  placeholder="Search voices by name, creator, or style..."
+                  placeholder="Search voices by name or creator address..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-12 h-12 bg-card border-border"
                 />
               </div>
+              <Button 
+                variant="outline" 
+                className="h-12"
+                onClick={() => {
+                  const addresses = getVoiceAddresses();
+                  // Create new array reference to trigger re-fetch
+                  setVoiceAddresses([...addresses]);
+                  if (addresses.length > 0) {
+                    toast.info(`Refreshed: Found ${addresses.length} registered voice${addresses.length !== 1 ? 's' : ''} in registry`);
+                  } else {
+                    toast.info("No registered voices found. Register a voice on the Upload page to see it here.");
+                  }
+                }}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`h-5 w-5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
               <Button variant="outline" className="h-12">
                 <SlidersHorizontal className="h-5 w-5 mr-2" />
                 Filters
@@ -272,10 +166,13 @@ const Marketplace = () => {
               <Alert>
                 <InfoIcon className="h-4 w-4" />
                 <AlertDescription>
-                  No voices available yet. Be the first to register your voice!
+                  <strong>No voices registered on-chain yet.</strong>
                   <br />
+                  <span className="text-sm mt-2 block">
+                    Be the first to register your voice on Aptos blockchain!
+                  </span>
                   <span className="text-xs text-muted-foreground mt-2 block">
-                    Go to the Upload page to register your voice on-chain.
+                    Go to the Upload page to register your voice on-chain and make it available in the marketplace.
                   </span>
                 </AlertDescription>
               </Alert>
@@ -292,7 +189,7 @@ const Marketplace = () => {
                     <VoiceMarketplaceCard
                       key={`${voice.owner}-${voice.voiceId}`}
                       voice={voice}
-                      onPaymentSuccess={(txHash, voice) => handleVoiceSelected(voice, txHash)}
+                      onPaymentSuccess={(txHash, voice) => handlePurchaseSuccess(voice, txHash)}
                     />
                   ))}
               </div>
@@ -301,59 +198,6 @@ const Marketplace = () => {
         </main>
         <Footer />
       </div>
-
-      {/* TTS Generation Dialog (shown after scratch card) */}
-      <Dialog open={showTTSDialog} onOpenChange={setShowTTSDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Generate Speech with {selectedVoice?.name}</DialogTitle>
-            <DialogDescription>
-              Payment successful! Transaction: {paymentTxHash?.slice(0, 8)}...{paymentTxHash?.slice(-6)}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="tts-text">Enter text to generate</Label>
-              <Textarea
-                id="tts-text"
-                value={ttsText}
-                onChange={(e) => setTtsText(e.target.value)}
-                placeholder="Type your text here..."
-                className="min-h-[150px]"
-              />
-            </div>
-
-            <Button
-              onClick={handleGenerateTTS}
-              disabled={isGenerating}
-              className="w-full"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Generate Speech
-                </>
-              )}
-            </Button>
-
-            {generatedAudioUrl && (
-              <div className="bg-muted/50 p-6 rounded-xl space-y-4">
-                <audio src={generatedAudioUrl} controls className="w-full" />
-                <Button onClick={handleDownload} variant="outline" className="w-full">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Audio
-                </Button>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };

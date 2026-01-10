@@ -6,6 +6,9 @@ import FormData from "form-data";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import multer from "multer";
+import * as shelby from "./shelby.js";
+import * as voiceModel from "./voiceModel.js";
 
 // Get the directory of the current file (backend/)
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +19,9 @@ dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "200mb" }));
+
+// Multer for file uploads
+const upload = multer({ storage: multer.memoryStorage() });
 
 // API Keys
 const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
@@ -158,12 +164,50 @@ app.post("/api/openai/speak", async (req, res) => {
 // ==================== Unified TTS Endpoint ====================
 
 // 5️⃣ Unified TTS endpoint that handles different voice providers based on model URI
+// NOTE: This endpoint must verify Aptos access for Shelby URIs before loading models
 app.post("/api/tts/generate", async (req, res) => {
   try {
-    const { modelUri, text } = req.body;
+    const { modelUri, text, requesterAccount } = req.body;
     
     if (!modelUri) return res.status(400).json({ error: "modelUri parameter missing" });
     if (!text) return res.status(400).json({ error: "text parameter missing" });
+
+    // Handle Shelby URIs (voice models stored on Shelby)
+    if (modelUri.startsWith("shelby://")) {
+      // Verify access on Aptos before loading model
+      if (!requesterAccount) {
+        return res.status(400).json({ error: "requesterAccount required for Shelby URIs" });
+      }
+
+      // For Shelby URIs, verify access (owner or purchased)
+      // Note: In production, this would query Aptos contract for purchase verification
+      const hasAccess = await shelby.verifyAccess(modelUri, requesterAccount);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          error: "Access denied", 
+          message: "You must purchase this voice from the marketplace to use it." 
+        });
+      }
+
+      // Download voice model from Shelby
+      const bundle = await shelby.downloadFromShelby(modelUri, "embedding.bin").catch(() => null);
+      if (!bundle) {
+        return res.status(404).json({ error: "Voice model not found on Shelby" });
+      }
+
+      // TODO: Load embedding into TTS engine and generate speech
+      // For now, this is a placeholder - in production you would:
+      // 1. Load embedding.bin
+      // 2. Load config.json for model parameters
+      // 3. Use TTS engine with the embedding to generate speech
+      // 4. Return audio stream
+      
+      // Placeholder: Return error indicating TTS engine integration needed
+      return res.status(501).json({ 
+        error: "Shelby voice model TTS not yet implemented",
+        message: "Voice model loaded from Shelby, but TTS engine integration is required"
+      });
+    }
 
     // Parse model URI to determine provider
     if (modelUri.startsWith("eleven:")) {
@@ -222,7 +266,10 @@ app.post("/api/tts/generate", async (req, res) => {
       res.send(Buffer.from(audio));
       
     } else {
-      return res.status(400).json({ error: "Unsupported model URI format. Use 'eleven:' or 'openai:' prefix" });
+      return res.status(400).json({ 
+        error: "Unsupported model URI format", 
+        message: "Supported formats: 'shelby://...', 'eleven:...', or 'openai:...'" 
+      });
     }
   } catch (err) {
     res.status(500).json({ error: "TTS generation failed", message: err.message });
@@ -279,6 +326,158 @@ app.post("/api/payment/breakdown", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to calculate payment breakdown", message: err.message });
+  }
+});
+
+// ==================== Shelby Storage Integration ====================
+
+// 7️⃣ Process audio, generate voice model bundle, and upload to Shelby
+app.post("/api/voice/process", upload.single("audio"), async (req, res) => {
+  try {
+    const { name, description, owner, voiceId } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: "Audio file is required" });
+    }
+
+    if (!name || !owner || !voiceId) {
+      return res.status(400).json({ error: "name, owner, and voiceId are required" });
+    }
+
+    const audioBuffer = req.file.buffer;
+    const mimeType = req.file.mimetype;
+
+    // Step 1: Process audio and generate voice model bundle
+    console.log("[API] Processing voice model...");
+    const bundle = await voiceModel.processVoiceModel({
+      audioBuffer,
+      mimeType,
+      name,
+      description,
+      owner,
+      voiceId,
+    });
+
+    // Step 2: Build Shelby URI
+    const namespace = "voices";
+    const shelbyUri = `shelby://${owner}/${namespace}/${voiceId}`;
+
+    // Step 3: Upload bundle to Shelby
+    console.log("[API] Uploading bundle to Shelby...");
+    const uploadResult = await shelby.uploadToShelby(owner, namespace, voiceId, bundle.files);
+
+    res.json({
+      success: true,
+      uri: uploadResult.uri || shelbyUri,
+      cid: uploadResult.cid,
+      bundle: {
+        config: bundle.config,
+        meta: bundle.meta,
+      },
+    });
+  } catch (err) {
+    console.error("[API] Voice processing error:", err);
+    res.status(500).json({ error: "Voice processing failed", message: err.message });
+  }
+});
+
+// 8️⃣ Upload voice bundle to Shelby
+app.post("/api/shelby/upload", upload.fields([
+  { name: "embedding.bin", maxCount: 1 },
+  { name: "config.json", maxCount: 1 },
+  { name: "meta.json", maxCount: 1 },
+  { name: "preview.wav", maxCount: 1 },
+]), async (req, res) => {
+  try {
+    const uri = req.headers["x-shelby-uri"];
+    const account = req.headers["x-aptos-account"];
+
+    if (!uri || !account) {
+      return res.status(400).json({ error: "Shelby URI and Aptos account are required" });
+    }
+
+    // Parse URI
+    const match = uri.match(/^shelby:\/\/([^/]+)\/([^/]+)\/(.+)$/);
+    if (!match) {
+      return res.status(400).json({ error: "Invalid Shelby URI format" });
+    }
+
+    const [, parsedAccount, namespace, voiceId] = match;
+
+    // Verify account matches
+    if (parsedAccount.toLowerCase() !== account.toLowerCase()) {
+      return res.status(403).json({ error: "Account mismatch" });
+    }
+
+    // Prepare bundle files
+    const bundleFiles = {};
+    if (req.files["embedding.bin"]) {
+      bundleFiles["embedding.bin"] = req.files["embedding.bin"][0].buffer;
+    }
+    if (req.files["config.json"]) {
+      bundleFiles["config.json"] = req.files["config.json"][0].buffer;
+    }
+    if (req.files["meta.json"]) {
+      bundleFiles["meta.json"] = req.files["meta.json"][0].buffer;
+    }
+    if (req.files["preview.wav"]) {
+      bundleFiles["preview.wav"] = req.files["preview.wav"][0].buffer;
+    }
+
+    if (Object.keys(bundleFiles).length === 0) {
+      return res.status(400).json({ error: "No files provided" });
+    }
+
+    // Upload to Shelby
+    const result = await shelby.uploadToShelby(account, namespace, voiceId, bundleFiles);
+
+    res.json({
+      success: true,
+      uri: result.uri,
+      cid: result.cid,
+      size: result.size,
+    });
+  } catch (err) {
+    console.error("[API] Shelby upload error:", err);
+    res.status(500).json({ error: "Shelby upload failed", message: err.message });
+  }
+});
+
+// 9️⃣ Download file from Shelby
+app.post("/api/shelby/download", async (req, res) => {
+  try {
+    const { uri, filename, requesterAccount } = req.body;
+
+    if (!uri || !filename) {
+      return res.status(400).json({ error: "URI and filename are required" });
+    }
+
+    // Verify access (if requesterAccount provided)
+    if (requesterAccount) {
+      const hasAccess = await shelby.verifyAccess(uri, requesterAccount);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+    }
+
+    // Download from Shelby
+    const fileBuffer = await shelby.downloadFromShelby(uri, filename);
+
+    // Set appropriate content type
+    let contentType = "application/octet-stream";
+    if (filename.endsWith(".json")) {
+      contentType = "application/json";
+    } else if (filename.endsWith(".wav")) {
+      contentType = "audio/wav";
+    } else if (filename.endsWith(".bin")) {
+      contentType = "application/octet-stream";
+    }
+
+    res.set("Content-Type", contentType);
+    res.send(fileBuffer);
+  } catch (err) {
+    console.error("[API] Shelby download error:", err);
+    res.status(500).json({ error: "Shelby download failed", message: err.message });
   }
 });
 

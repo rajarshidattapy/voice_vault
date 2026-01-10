@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { aptosClient } from "./useAptosWallet";
 import { CONTRACTS, octasToApt } from "@/lib/contracts";
+import { parseMoveString } from "@/lib/moveUtils";
 
 export interface VoiceMetadata {
   owner: string;
@@ -31,26 +32,28 @@ export function useVoiceMetadata(ownerAddress: string | null) {
       setError(null);
 
       try {
-        // Call view function to get metadata
-        const result = await aptosClient.view({
-          payload: {
-            function: `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::get_metadata`,
-            typeArguments: [],
-            functionArguments: [ownerAddress],
-          },
+        // Query the VoiceIdentity resource directly (since get_metadata is not a view function)
+        const resourceType = `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::VoiceIdentity`;
+        const resources = await aptosClient.getAccountResources({
+          accountAddress: ownerAddress,
         });
 
-        // Parse the result tuple: (owner, voice_id, name, model_uri, rights, price_per_use, created_at)
-        const [owner, voiceId, name, modelUri, rights, priceInOctas, createdAt] = result;
+        const voiceResource = resources.find((r) => r.type === resourceType);
+
+        if (!voiceResource || !voiceResource.data) {
+          throw new Error("VoiceIdentity resource not found");
+        }
+
+        const data = voiceResource.data as any;
 
         setMetadata({
-          owner: owner as string,
-          voiceId: voiceId as string,
-          name: name as string,
-          modelUri: modelUri as string,
-          rights: rights as string,
-          pricePerUse: octasToApt(Number(priceInOctas)),
-          createdAt: Number(createdAt),
+          owner: data.owner as string,
+          voiceId: data.voice_id?.toString() || "0",
+          name: parseMoveString(data.name),
+          modelUri: parseMoveString(data.model_uri),
+          rights: parseMoveString(data.rights),
+          pricePerUse: octasToApt(Number(data.price_per_use || 0)),
+          createdAt: Number(data.created_at || 0),
         });
       } catch (err: any) {
         console.error("Error fetching voice metadata:", err);
@@ -72,15 +75,18 @@ export function useVoiceMetadata(ownerAddress: string | null) {
  */
 export async function getVoiceId(ownerAddress: string): Promise<string | null> {
   try {
-    const result = await aptosClient.view({
-      payload: {
-        function: `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::get_voice_id`,
-        typeArguments: [],
-        functionArguments: [ownerAddress],
-      },
+    const resourceType = `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::VoiceIdentity`;
+    const resources = await aptosClient.getAccountResources({
+      accountAddress: ownerAddress,
     });
 
-    return result[0] as string;
+    const voiceResource = resources.find((r) => r.type === resourceType);
+    if (!voiceResource || !voiceResource.data) {
+      return null;
+    }
+
+    const data = voiceResource.data as any;
+    return data.voice_id?.toString() || null;
   } catch (error) {
     console.error("Error fetching voice ID:", error);
     return null;
@@ -92,15 +98,12 @@ export async function getVoiceId(ownerAddress: string): Promise<string | null> {
  */
 export async function checkVoiceExists(ownerAddress: string): Promise<boolean> {
   try {
-    const result = await aptosClient.view({
-      payload: {
-        function: `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::voice_exists`,
-        typeArguments: [],
-        functionArguments: [ownerAddress],
-      },
+    const resourceType = `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::VoiceIdentity`;
+    const resources = await aptosClient.getAccountResources({
+      accountAddress: ownerAddress,
     });
 
-    return result[0] as boolean;
+    return resources.some((r) => r.type === resourceType);
   } catch (error) {
     // If function fails, voice likely doesn't exist
     console.error("Error checking voice existence:", error);
