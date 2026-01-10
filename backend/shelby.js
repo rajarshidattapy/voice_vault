@@ -1,68 +1,68 @@
 /**
- * Shelby RPC integration for backend
- * Handles actual Shelby RPC calls and blob operations
+ * Shelby storage implementation (local file-based for development)
  * 
- * Note: This is a placeholder implementation. In production, you would
- * integrate with actual Shelby RPC endpoints based on their protocol.
+ * In production, this would integrate with actual Shelby RPC endpoints.
+ * For development, we use local file storage organized by:
+ * storage/shelby/{account}/{namespace}/{voiceId}/{filename}
  */
 
-import fetch from "node-fetch";
-import FormData from "form-data";
+import { promises as fs } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
-// Shelby RPC configuration
-const SHELBY_RPC_URL = process.env.SHELBY_RPC_URL || "https://rpc-testnet.shelby.net";
-const SHELBY_NETWORK = process.env.SHELBY_NETWORK || "testnet";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Local storage directory for Shelby (development only)
+const STORAGE_ROOT = path.resolve(__dirname, "storage", "shelby");
+
+// Ensure storage directory exists
+async function ensureStorageDir(account, namespace, voiceId) {
+  const dir = path.join(STORAGE_ROOT, account, namespace, voiceId);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
 
 /**
- * Upload bundle to Shelby via RPC
+ * Upload bundle to Shelby (local file storage for development)
  * 
- * In production, this would use Shelby's actual RPC protocol:
- * - POST to /rpc/v1/upload
- * - Include authentication/signing
- * - Handle chunking for large files
- * - Return immutable content-addressed URI
+ * In production, this would use Shelby's actual RPC protocol.
+ * For development, we store files locally in a structured directory.
  */
 export async function uploadToShelby(account, namespace, voiceId, bundleFiles) {
   try {
     // Parse Shelby URI
     const uri = `shelby://${account}/${namespace}/${voiceId}`;
 
-    // Prepare multipart form data
-    const form = new FormData();
-    
-    // Add all bundle files
+    // Ensure storage directory exists
+    const storageDir = await ensureStorageDir(account, namespace, voiceId);
+
+    // Calculate total size
+    let totalSize = 0;
+
+    // Write all bundle files to storage
     for (const [filename, buffer] of Object.entries(bundleFiles)) {
-      form.append(filename, buffer, { filename });
+      const filePath = path.join(storageDir, filename);
+      await fs.writeFile(filePath, buffer);
+      totalSize += buffer.length;
+      console.log(`[Shelby] Stored ${filename} (${(buffer.length / 1024).toFixed(2)} KB)`);
     }
 
-    // Upload to Shelby RPC
-    // NOTE: This is a placeholder. Actual Shelby RPC would have:
-    // - Authentication headers (Aptos signature)
-    // - Specific endpoint structure
-    // - Content-addressing/immutability guarantees
-    const response = await fetch(`${SHELBY_RPC_URL}/rpc/v1/upload`, {
-      method: "POST",
-      headers: {
-        ...form.getHeaders(),
-        "X-Aptos-Account": account,
-        "X-Shelby-Namespace": namespace,
-        "X-Voice-Id": voiceId,
-      },
-      body: form,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Shelby upload failed: ${response.status} ${errorText}`);
+    // Generate content hash for immutability (simplified)
+    const crypto = await import("crypto");
+    const hash = crypto.createHash("sha256");
+    for (const buffer of Object.values(bundleFiles)) {
+      hash.update(buffer);
     }
+    const cid = hash.digest("hex");
 
-    const result = await response.json();
+    console.log(`[Shelby] Upload complete: ${uri} (${(totalSize / 1024).toFixed(2)} KB total)`);
     
-    // Shelby returns the immutable URI (may differ from requested URI if content-addressed)
     return {
-      uri: result.uri || uri,
-      cid: result.cid, // Content ID if content-addressed
-      size: result.size,
+      uri,
+      cid: `0x${cid}`,
+      size: totalSize,
       uploadedAt: Date.now(),
     };
   } catch (error) {
@@ -72,9 +72,10 @@ export async function uploadToShelby(account, namespace, voiceId, bundleFiles) {
 }
 
 /**
- * Download file from Shelby via RPC
+ * Download file from Shelby (local file storage for development)
  * 
- * All reads go through Shelby RPC, never directly to Storage Providers
+ * In production, this would download from Shelby RPC.
+ * For development, we read from local file storage.
  */
 export async function downloadFromShelby(uri, filename) {
   try {
@@ -86,31 +87,19 @@ export async function downloadFromShelby(uri, filename) {
 
     const [, account, namespace, voiceId] = match;
 
-    // Download from Shelby RPC
-    // NOTE: This is a placeholder. Actual Shelby RPC would:
-    // - Verify access permissions via Aptos
-    // - Handle range requests for streaming
-    // - Return file chunks from Storage Providers
-    const response = await fetch(`${SHELBY_RPC_URL}/rpc/v1/download`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        uri,
-        filename,
-        account,
-        namespace,
-        voiceId,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Shelby download failed: ${response.status} ${errorText}`);
+    // Read from local storage
+    const filePath = path.join(STORAGE_ROOT, account, namespace, voiceId, filename);
+    
+    try {
+      const buffer = await fs.readFile(filePath);
+      console.log(`[Shelby] Downloaded ${filename} from ${uri} (${(buffer.length / 1024).toFixed(2)} KB)`);
+      return buffer;
+    } catch (fileError) {
+      if (fileError.code === "ENOENT") {
+        throw new Error(`File not found: ${filename} in ${uri}`);
+      }
+      throw fileError;
     }
-
-    return response.buffer();
   } catch (error) {
     console.error("[Shelby] Download error:", error);
     throw error;

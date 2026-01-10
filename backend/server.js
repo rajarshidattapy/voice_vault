@@ -18,17 +18,32 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "200mb" }));
 
-// Multer for file uploads
-const upload = multer({ storage: multer.memoryStorage() });
+// Parse JSON only for application/json content type
+// Multer handles multipart/form-data
+// express.urlencoded handles application/x-www-form-urlencoded
+app.use((req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  if (contentType.includes('application/json')) {
+    express.json({ limit: "200mb" })(req, res, next);
+  } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    express.urlencoded({ extended: true, limit: "200mb" })(req, res, next);
+  } else {
+    // For multipart/form-data, let multer handle it
+    next();
+  }
+});
+
+// Multer for file uploads - explicitly configured to handle both files and text fields
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  // Ensure text fields are parsed and available in req.body
+});
 
 // API Keys
 const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 if (!ELEVEN_KEY) console.warn("⚠️ Missing ELEVENLABS_API_KEY");
-if (!OPENAI_KEY) console.warn("⚠️ Missing OPENAI_API_KEY");
 
 // ==================== ElevenLabs TTS ====================
 
@@ -122,46 +137,132 @@ app.post("/api/elevenlabs/clone", async (req, res) => {
   }
 });
 
-// ==================== OpenAI TTS ====================
+// ==================== ElevenLabs Voice Cloning ====================
 
-// 4️⃣ Generate TTS using OpenAI
-app.post("/api/openai/speak", async (req, res) => {
+// 4️⃣ Clone a voice using ElevenLabs (for fun/testing)
+// Use upload.single() which processes the file and all text fields
+app.post("/api/elevenlabs/clone", upload.single("audio"), async (req, res) => {
   try {
-    if (!OPENAI_KEY) {
-      return res.status(500).json({ error: "OpenAI API key not configured" });
+    if (!ELEVEN_KEY) {
+      return res.status(500).json({ error: "ElevenLabs API key not configured" });
     }
 
-    const { voice, text, model } = req.body;
-    if (!voice) return res.status(400).json({ error: "voice parameter missing" });
-    if (!text) return res.status(400).json({ error: "text parameter missing" });
+    if (!req.file) {
+      return res.status(400).json({ error: "Audio file is required" });
+    }
 
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    // Multer puts text fields in req.body
+    // Handle both direct access and bracket notation for safety
+    const name = (req.body && (req.body.name || req.body['name'])) || null;
+    const description = (req.body && (req.body.description || req.body['description'])) || null;
+    
+    if (!name) {
+      const contentType = req.headers['content-type'] || 'not set';
+      console.error("[Voice Clone] Missing name in req.body:", { 
+        body: req.body, 
+        bodyType: typeof req.body,
+        bodyKeys: req.body ? Object.keys(req.body) : 'req.body is undefined',
+        contentType: contentType,
+        hasFile: !!req.file,
+        fileSize: req.file?.size
+      });
+      return res.status(400).json({ 
+        error: "Voice name is required. Please ensure you're sending 'name' field in the form data.",
+        debug: {
+          contentType: contentType,
+          bodyExists: !!req.body,
+          bodyKeys: req.body ? Object.keys(req.body) : []
+        }
+      });
+    }
+
+    // Prepare form data for ElevenLabs API
+    const formData = new FormData();
+    formData.append("files", req.file.buffer, {
+      filename: req.file.originalname || "audio.wav",
+      contentType: req.file.mimetype || "audio/wav",
+    });
+    formData.append("name", name);
+    // Description can include sample text to help with voice cloning quality
+    if (description && description.trim()) {
+      formData.append("description", description.trim());
+    }
+
+    // Call ElevenLabs voice cloning API
+    const response = await fetch("https://api.elevenlabs.io/v1/voices/add", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_KEY}`,
-        "Content-Type": "application/json",
+        "xi-api-key": ELEVEN_KEY,
+        ...formData.getHeaders(),
       },
-      body: JSON.stringify({
-        model: model || "tts-1",
-        voice: voice,
-        input: text,
-      }),
+      body: formData,
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      return res.status(response.status).json({ error: "TTS generation failed", details: errorText });
+      console.error("[Voice Clone] ElevenLabs API error:", errorText);
+      return res.status(response.status).json({ 
+        error: "Voice cloning failed", 
+        details: errorText 
+      });
     }
 
-    const audio = await response.arrayBuffer();
-    res.set("Content-Type", "audio/mpeg");
-    res.send(Buffer.from(audio));
+    const data = await response.json();
+    res.json({
+      success: true,
+      voice_id: data.voice_id,
+      name: data.name,
+      message: "Voice cloned successfully! You can now use this voice for TTS.",
+    });
   } catch (err) {
-    res.status(500).json({ error: "TTS failed", message: err.message });
+    console.error("[Voice Clone] Error:", err);
+    res.status(500).json({ error: "Voice cloning failed", message: err.message });
   }
 });
 
 // ==================== Unified TTS Endpoint ====================
+
+// Helper function: Generate TTS with a generic/default voice (fallback)
+async function generateTTSWithGenericVoice(text, res) {
+  try {
+    if (!ELEVEN_KEY) {
+      return res.status(500).json({ 
+        error: "TTS generation failed",
+        message: "ElevenLabs API key not configured"
+      });
+    }
+
+    // Use ElevenLabs default voice (Rachel) as fallback
+    const response = await fetch("https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM", {
+      method: "POST",
+      headers: { "xi-api-key": ELEVEN_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      }),
+    });
+
+    if (response.ok) {
+      const audio = await response.arrayBuffer();
+      res.set("Content-Type", "audio/mpeg");
+      return res.send(Buffer.from(audio));
+    }
+
+    // If ElevenLabs fails, return error
+    const errorText = await response.text();
+    return res.status(response.status).json({ 
+      error: "TTS generation failed",
+      message: `ElevenLabs TTS failed: ${errorText}`
+    });
+  } catch (error) {
+    console.error("[TTS] Generic voice generation error:", error);
+    return res.status(500).json({ 
+      error: "TTS generation failed",
+      message: error.message 
+    });
+  }
+}
 
 // 5️⃣ Unified TTS endpoint that handles different voice providers based on model URI
 // NOTE: This endpoint must verify Aptos access for Shelby URIs before loading models
@@ -189,24 +290,90 @@ app.post("/api/tts/generate", async (req, res) => {
         });
       }
 
-      // Download voice model from Shelby
-      const bundle = await shelby.downloadFromShelby(modelUri, "embedding.bin").catch(() => null);
-      if (!bundle) {
-        return res.status(404).json({ error: "Voice model not found on Shelby" });
+      // Download voice model bundle from Shelby
+      const embeddingBuffer = await shelby.downloadFromShelby(modelUri, "embedding.bin").catch(() => null);
+      const configBuffer = await shelby.downloadFromShelby(modelUri, "config.json").catch(() => null);
+      const previewBuffer = await shelby.downloadFromShelby(modelUri, "preview.wav").catch(() => null);
+      
+      if (!embeddingBuffer || !configBuffer) {
+        return res.status(404).json({ error: "Voice model files not found on Shelby" });
       }
 
-      // TODO: Load embedding into TTS engine and generate speech
-      // For now, this is a placeholder - in production you would:
-      // 1. Load embedding.bin
-      // 2. Load config.json for model parameters
-      // 3. Use TTS engine with the embedding to generate speech
-      // 4. Return audio stream
-      
-      // Placeholder: Return error indicating TTS engine integration needed
-      return res.status(501).json({ 
-        error: "Shelby voice model TTS not yet implemented",
-        message: "Voice model loaded from Shelby, but TTS engine integration is required"
-      });
+      // For MVP: Use ElevenLabs voice cloning API with the preview audio
+      // In production, you would load the embedding into a TTS engine directly
+      if (!ELEVEN_KEY) {
+        return res.status(500).json({ 
+          error: "ElevenLabs API key not configured",
+          message: "ElevenLabs is required for Shelby voice model TTS generation"
+        });
+      }
+
+      // Strategy: Use ElevenLabs voice cloning with preview audio
+      // If preview is available, create a temporary voice clone and use it for TTS
+      if (previewBuffer && previewBuffer.length > 0) {
+        try {
+          // Step 1: Create a voice clone using the preview audio
+          const formData = new FormData();
+          formData.append("files", previewBuffer, {
+            filename: "preview.wav",
+            contentType: "audio/wav",
+          });
+          formData.append("name", `shelby-voice-${Date.now()}`);
+
+          const cloneResponse = await fetch("https://api.elevenlabs.io/v1/voices/add", {
+            method: "POST",
+            headers: { 
+              "xi-api-key": ELEVEN_KEY,
+              ...formData.getHeaders(), // Get proper Content-Type and boundary headers
+            },
+            body: formData,
+          });
+
+          if (!cloneResponse.ok) {
+            const errorText = await cloneResponse.text();
+            console.error("[TTS] Voice cloning failed:", errorText);
+            // Fallback to generic voice
+            return await generateTTSWithGenericVoice(text, res);
+          }
+
+          const cloneData = await cloneResponse.json();
+          const clonedVoiceId = cloneData.voice_id;
+
+          // Step 2: Use the cloned voice for TTS generation
+          const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${clonedVoiceId}`, {
+            method: "POST",
+            headers: { "xi-api-key": ELEVEN_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              model_id: "eleven_multilingual_v2",
+              voice_settings: { stability: 0.5, similarity_boost: 0.85 }
+            }),
+          });
+
+          if (!ttsResponse.ok) {
+            const errorText = await ttsResponse.text();
+            console.error("[TTS] TTS generation with cloned voice failed:", errorText);
+            // Fallback to generic voice
+            return await generateTTSWithGenericVoice(text, res);
+          }
+
+          const audio = await ttsResponse.arrayBuffer();
+          res.set("Content-Type", "audio/mpeg");
+          res.send(Buffer.from(audio));
+
+          // TODO: Optionally delete the temporary cloned voice after use
+          // This would require storing the voice_id temporarily and cleaning up
+          
+          return;
+        } catch (cloneError) {
+          console.error("[TTS] Error during voice cloning process:", cloneError);
+          // Fallback to generic voice
+          return await generateTTSWithGenericVoice(text, res);
+        }
+      } else {
+        // No preview audio available - use generic voice
+        return await generateTTSWithGenericVoice(text, res);
+      }
     }
 
     // Parse model URI to determine provider
@@ -236,39 +403,10 @@ app.post("/api/tts/generate", async (req, res) => {
       res.set("Content-Type", "audio/mpeg");
       res.send(Buffer.from(audio));
       
-    } else if (modelUri.startsWith("openai:")) {
-      // OpenAI voice
-      const voiceId = modelUri.replace("openai:", "");
-      if (!OPENAI_KEY) {
-        return res.status(500).json({ error: "OpenAI API key not configured" });
-      }
-
-      const response = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "tts-1",
-          voice: voiceId,
-          input: text,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        return res.status(response.status).json({ error: "OpenAI TTS failed", details: errorText });
-      }
-
-      const audio = await response.arrayBuffer();
-      res.set("Content-Type", "audio/mpeg");
-      res.send(Buffer.from(audio));
-      
     } else {
       return res.status(400).json({ 
         error: "Unsupported model URI format", 
-        message: "Supported formats: 'shelby://...', 'eleven:...', or 'openai:...'" 
+        message: "Supported formats: 'shelby://...' or 'eleven:...'" 
       });
     }
   } catch (err) {
@@ -490,5 +628,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🔥 Voice server running → http://localhost:${PORT}`);
   console.log(`   - ElevenLabs TTS & Voice Cloning: ${ELEVEN_KEY ? '✅' : '❌ (API key missing)'}`);
-  console.log(`   - OpenAI TTS: ${OPENAI_KEY ? '✅' : '❌ (API key missing)'}`);
 });

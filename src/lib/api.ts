@@ -16,9 +16,7 @@ export const BACKEND_CONFIG = {
     ELEVENLABS_VOICES: '/api/elevenlabs/voices',
     ELEVENLABS_SPEAK: '/api/elevenlabs/speak',
     ELEVENLABS_CLONE: '/api/elevenlabs/clone',
-    // OpenAI TTS
-    OPENAI_SPEAK: '/api/openai/speak',
-    // Unified TTS (handles both ElevenLabs, OpenAI, and Shelby)
+    // Unified TTS (handles ElevenLabs and Shelby)
     UNIFIED_TTS: '/api/tts/generate',
     // Payment
     PAYMENT_BREAKDOWN: '/api/payment/breakdown',
@@ -100,22 +98,24 @@ export const backendApi = {
   /**
    * Clone a voice using ElevenLabs API via backend
    * @param name Voice name
-   * @param files Array of audio files to clone from
-   * @returns Voice ID from ElevenLabs
+   * @param audioFile Audio file to clone from
+   * @param description Optional sample text (what was spoken in the recording) - helps improve cloning quality
+   * @returns Voice ID and details from ElevenLabs
    */
-  async cloneVoice(name: string, files: File[]): Promise<{ voice_id: string }> {
+  async cloneVoice(name: string, audioFile: File, description?: string): Promise<{ voice_id: string; name: string; message: string }> {
     const url = `${BACKEND_CONFIG.BASE_URL}${BACKEND_CONFIG.ENDPOINTS.ELEVENLABS_CLONE}`;
-    console.log('[API] Cloning voice:', { url, name, fileCount: files.length });
-    
-    const base64Files = await Promise.all(files.map(file => fileToBase64(file)));
+    console.log('[API] Cloning voice:', { url, name, fileName: audioFile.name });
+
+    const formData = new FormData();
+    formData.append('audio', audioFile);
+    formData.append('name', name);
+    if (description) {
+      formData.append('description', description);
+    }
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        files: base64Files.map(base64 => ({ base64 })),
-      }),
+      body: formData,
     });
 
     console.log('[API] Clone response status:', response.status, response.statusText);
@@ -138,8 +138,8 @@ export const backendApi = {
   },
 
   /**
-   * Generate speech using unified TTS endpoint (handles ElevenLabs, OpenAI, and Shelby)
-   * @param modelUri Model URI (e.g., "eleven:voiceId", "openai:voiceId", or "shelby://...")
+   * Generate speech using unified TTS endpoint (handles ElevenLabs and Shelby)
+   * @param modelUri Model URI (e.g., "eleven:voiceId" or "shelby://...")
    * @param text Text to convert to speech
    * @param requesterAccount Aptos account address (required for Shelby URIs)
    * @returns Audio blob
@@ -174,37 +174,6 @@ export const backendApi = {
     return response.blob();
   },
 
-  /**
-   * Generate speech using OpenAI TTS
-   * @param voice OpenAI voice ID (alloy, echo, fable, onyx, nova, shimmer)
-   * @param text Text to convert to speech
-   * @param model Model to use (default: tts-1)
-   * @returns Audio blob
-   */
-  async generateOpenAISpeech(voice: string, text: string, model: string = 'tts-1'): Promise<Blob> {
-    const url = `${BACKEND_CONFIG.BASE_URL}${BACKEND_CONFIG.ENDPOINTS.OPENAI_SPEAK}`;
-    console.log('[API] Generating OpenAI speech:', { url, voice, textLength: text.length });
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ voice, text, model }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[API] OpenAI TTS error:', errorText);
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        errorData = { error: errorText || 'OpenAI TTS generation failed' };
-      }
-      throw new Error(errorData.error || errorData.message || 'OpenAI TTS generation failed');
-    }
-
-    return response.blob();
-  },
 
   /**
    * Calculate payment breakdown

@@ -13,7 +13,8 @@ dist-ssr
 *.local
 
 # Backend data storage
-backend/data/
+backend/data
+backend/storage/
 
 # Editor directories and files
 .vscode/*

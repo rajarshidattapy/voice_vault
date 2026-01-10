@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { useVoiceRegister } from "@/hooks/useVoiceRegister";
+import { useVoiceUnregister } from "@/hooks/useVoiceUnregister";
 import { useAptosWallet } from "@/hooks/useAptosWallet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { addVoiceToRegistry } from "@/lib/voiceRegistry";
+import { addVoiceToRegistry, removeVoiceFromRegistry } from "@/lib/voiceRegistry";
 import { useVoiceMetadata } from "@/hooks/useVoiceMetadata";
 import { isShelbyUri, parseShelbyUri } from "@/lib/shelby";
 
@@ -19,6 +20,7 @@ interface VoiceRegistrationFormProps {
 
 export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: VoiceRegistrationFormProps) {
   const { registerVoice, isRegistering } = useVoiceRegister();
+  const { unregisterVoice, isUnregistering } = useVoiceUnregister();
   const { address, isConnected } = useAptosWallet();
   const [formData, setFormData] = useState({
     name: autoName,
@@ -139,6 +141,51 @@ export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: Voic
     }
   };
 
+  const handleDelete = async () => {
+    if (!isConnected || !address) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
+    if (!existingVoice) {
+      toast.error("No voice found to delete");
+      return;
+    }
+
+    // Confirm deletion
+    const confirmed = window.confirm(
+      `Are you sure you want to delete your voice "${existingVoice.name}"? This action cannot be undone and will remove your voice from the blockchain.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    toast.info("Deleting voice on Aptos blockchain...");
+    const result = await unregisterVoice();
+
+    if (result?.success) {
+      // Remove from local voice registry
+      removeVoiceFromRegistry(address.toString());
+      
+      toast.success("Voice deleted successfully!", {
+        description: `Transaction: ${result.transactionHash.slice(0, 8)}...${result.transactionHash.slice(-6)}`,
+        duration: 7000,
+        action: {
+          label: "View on Explorer",
+          onClick: () => {
+            window.open(`https://explorer.aptoslabs.com/txn/${result.transactionHash}?network=testnet`, '_blank');
+          },
+        },
+      });
+
+      // Refresh the page after a delay to show the deletion
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    }
+  };
+
   // Show warning if voice already exists
   if (existingVoice) {
     return (
@@ -167,9 +214,34 @@ export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: Voic
                   <strong>Price:</strong> {existingVoice.pricePerUse} APT per use
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">
-                  The contract allows only one voice per wallet address. To register a new voice, you would need to use a different wallet address.
+                  The contract allows only one voice per wallet address. You can delete this voice to register a new one.
                 </p>
               </div>
+            </AlertDescription>
+          </Alert>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={isUnregistering || !isConnected}
+            className="w-full"
+          >
+            {isUnregistering ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Deleting Voice...
+              </>
+            ) : (
+              <>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Voice
+              </>
+            )}
+          </Button>
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              <strong>Warning:</strong> Deleting your voice will permanently remove it from the blockchain. 
+              You will need to sign a transaction with your wallet to confirm the deletion.
             </AlertDescription>
           </Alert>
         </CardContent>

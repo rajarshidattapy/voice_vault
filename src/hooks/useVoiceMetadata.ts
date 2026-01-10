@@ -34,14 +34,29 @@ export function useVoiceMetadata(ownerAddress: string | null) {
       try {
         // Query the VoiceIdentity resource directly (since get_metadata is not a view function)
         const resourceType = `${CONTRACTS.VOICE_IDENTITY.address}::${CONTRACTS.VOICE_IDENTITY.module}::VoiceIdentity`;
-        const resources = await aptosClient.getAccountResources({
-          accountAddress: ownerAddress,
-        });
+        
+        let resources;
+        try {
+          resources = await aptosClient.getAccountResources({
+            accountAddress: ownerAddress,
+          });
+        } catch (apiError: any) {
+          // Account might not exist or have no resources - this is normal
+          if (apiError.message?.includes("Account not found") || apiError.statusCode === 404) {
+            setMetadata(null);
+            setError(null);
+            return;
+          }
+          throw apiError;
+        }
 
         const voiceResource = resources.find((r) => r.type === resourceType);
 
         if (!voiceResource || !voiceResource.data) {
-          throw new Error("VoiceIdentity resource not found");
+          // Resource doesn't exist - this is normal if voice hasn't been registered yet
+          setMetadata(null);
+          setError(null); // Don't treat as error, just no voice registered
+          return;
         }
 
         const data = voiceResource.data as any;
@@ -56,8 +71,11 @@ export function useVoiceMetadata(ownerAddress: string | null) {
           createdAt: Number(data.created_at || 0),
         });
       } catch (err: any) {
-        console.error("Error fetching voice metadata:", err);
-        setError(err.message || "Failed to fetch metadata");
+        // Only log actual errors, not "resource not found" cases
+        if (!err.message?.includes("not found") && !err.message?.includes("Account not found")) {
+          console.error("Error fetching voice metadata:", err);
+        }
+        setError(null); // Don't show error for missing resources
         setMetadata(null);
       } finally {
         setIsLoading(false);

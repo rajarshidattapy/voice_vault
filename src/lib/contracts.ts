@@ -5,7 +5,7 @@ export const CONTRACTS = {
     module: "payment_contract",
   },
   VOICE_IDENTITY: {
-    address: "0x594d426ee5f8d800c7ede249d83a4cbfc4ee0c7dbcefece5ae6e727b7b0cf9db",
+    address: "0xf32dc47c185d9bc65638b57eb50eb0c9c47832f898e373a6e1636535c6f1772c",
     module: "voice_identity",
   },
   PLATFORM_ADDRESS: "0xb0fcc55b9a116fec51295eb73b03ac31083a841290405c955fc088c2eeb0bf27", // Platform fee recipient
