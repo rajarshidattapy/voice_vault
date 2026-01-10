@@ -107,6 +107,70 @@ export async function downloadFromShelby(uri, filename) {
 }
 
 /**
+ * Delete voice bundle from Shelby (local file storage for development)
+ * 
+ * In production, this would use Shelby's actual RPC protocol for deletion.
+ * For development, we delete files from local file storage.
+ */
+export async function deleteFromShelby(uri, account) {
+  try {
+    // Parse URI
+    const match = uri.match(/^shelby:\/\/([^/]+)\/([^/]+)\/(.+)$/);
+    if (!match) {
+      throw new Error(`Invalid Shelby URI: ${uri}`);
+    }
+
+    const [, ownerAccount, namespace, voiceId] = match;
+
+    // Verify the account matches the owner
+    if (ownerAccount.toLowerCase() !== account.toLowerCase()) {
+      throw new Error("Unauthorized: Only the owner can delete their voice from Shelby");
+    }
+
+    // Delete the voice directory
+    const voiceDir = path.join(STORAGE_ROOT, ownerAccount, namespace, voiceId);
+    
+    try {
+      // Check if directory exists
+      await fs.access(voiceDir);
+      
+      // Delete all files in the directory
+      const files = await fs.readdir(voiceDir);
+      for (const file of files) {
+        const filePath = path.join(voiceDir, file);
+        await fs.unlink(filePath);
+        console.log(`[Shelby] Deleted file: ${file}`);
+      }
+      
+      // Remove the directory
+      await fs.rmdir(voiceDir);
+      
+      console.log(`[Shelby] Deleted voice bundle: ${uri}`);
+      
+      return {
+        success: true,
+        uri,
+        deletedAt: Date.now(),
+      };
+    } catch (dirError) {
+      if (dirError.code === "ENOENT") {
+        // Directory doesn't exist - this is okay, might have been already deleted
+        console.log(`[Shelby] Voice bundle not found (already deleted?): ${uri}`);
+        return {
+          success: true,
+          uri,
+          message: "Voice bundle not found (may have been already deleted)",
+        };
+      }
+      throw dirError;
+    }
+  } catch (error) {
+    console.error("[Shelby] Delete error:", error);
+    throw error;
+  }
+}
+
+/**
  * Check if account has access to a Shelby resource
  * Verifies permissions by checking Aptos payment contract
  * 

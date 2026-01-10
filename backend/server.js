@@ -619,6 +619,30 @@ app.post("/api/shelby/download", async (req, res) => {
   }
 });
 
+// 🔟 Delete voice bundle from Shelby
+app.post("/api/shelby/delete", async (req, res) => {
+  try {
+    const { uri, account } = req.body;
+
+    if (!uri || !account) {
+      return res.status(400).json({ error: "URI and account are required" });
+    }
+
+    // Verify it's a Shelby URI
+    if (!uri.startsWith("shelby://")) {
+      return res.status(400).json({ error: "Invalid URI format. Must be a Shelby URI (shelby://...)" });
+    }
+
+    // Delete from Shelby (this function verifies ownership)
+    const result = await shelby.deleteFromShelby(uri, account);
+
+    res.json(result);
+  } catch (err) {
+    console.error("[API] Shelby delete error:", err);
+    res.status(500).json({ error: "Shelby delete failed", message: err.message });
+  }
+});
+
 // ==================== Voice Metadata from Blockchain ====================
 // Note: Voice registry is stored on Aptos blockchain (contract2)
 // This endpoint can query blockchain directly if needed (future enhancement)

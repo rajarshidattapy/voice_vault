@@ -154,7 +154,7 @@ export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: Voic
 
     // Confirm deletion
     const confirmed = window.confirm(
-      `Are you sure you want to delete your voice "${existingVoice.name}"? This action cannot be undone and will remove your voice from the blockchain.`
+      `Are you sure you want to delete your voice "${existingVoice.name}"? This action cannot be undone and will remove your voice from the blockchain and Shelby storage.`
     );
 
     if (!confirmed) {
@@ -167,6 +167,23 @@ export function VoiceRegistrationForm({ autoName = "", autoModelUri = "" }: Voic
     if (result?.success) {
       // Remove from local voice registry
       removeVoiceFromRegistry(address.toString());
+      
+      // Delete from Shelby storage if it's a Shelby URI
+      if (existingVoice.modelUri && existingVoice.modelUri.startsWith("shelby://")) {
+        try {
+          toast.info("Deleting voice from Shelby storage...");
+          const { backendApi } = await import("@/lib/api");
+          await backendApi.deleteFromShelby(existingVoice.modelUri, address.toString());
+          toast.success("Voice deleted from Shelby storage");
+        } catch (err: any) {
+          console.error("Error deleting from Shelby:", err);
+          // Don't fail the whole operation if Shelby deletion fails
+          // The on-chain deletion was successful, which is the most important part
+          toast.warning("Voice deleted on-chain, but Shelby deletion failed", {
+            description: err.message || "Voice files may still exist in storage",
+          });
+        }
+      }
       
       toast.success("Voice deleted successfully!", {
         description: `Transaction: ${result.transactionHash.slice(0, 8)}...${result.transactionHash.slice(-6)}`,

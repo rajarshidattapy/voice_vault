@@ -24,6 +24,7 @@ export const BACKEND_CONFIG = {
     VOICE_PROCESS: '/api/voice/process',
     SHELBY_UPLOAD: '/api/shelby/upload',
     SHELBY_DOWNLOAD: '/api/shelby/download',
+    SHELBY_DELETE: '/api/shelby/delete',
   },
 };
 
@@ -321,6 +322,35 @@ export const backendApi = {
     }
 
     return response.arrayBuffer();
+  },
+
+  /**
+   * Delete voice bundle from Shelby
+   * @param uri Shelby URI
+   * @param account Aptos account address (owner)
+   * @returns Delete result
+   */
+  async deleteFromShelby(uri: string, account: string) {
+    const url = `${BACKEND_CONFIG.BASE_URL}${BACKEND_CONFIG.ENDPOINTS.SHELBY_DELETE}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri, account }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText || 'Shelby delete failed' };
+      }
+      throw new Error(errorData.error || errorData.message || 'Shelby delete failed');
+    }
+
+    return response.json();
   },
 
 };

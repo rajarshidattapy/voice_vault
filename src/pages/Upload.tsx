@@ -97,36 +97,79 @@ const Upload = () => {
 
   // ------------------- Load available voices (owned + purchased) -------------------
   useEffect(() => {
-    const loadAvailableVoices = () => {
+    const loadAvailableVoices = async () => {
       try {
         const allVoices: Array<{ voiceId: string; name: string; modelUri: string; owner: string; isOwned?: boolean }> = [];
         
-        // Add own voice if user has registered one
+        // Helper function to check if a Shelby URI is accessible
+        const checkShelbyUriExists = async (uri: string, requesterAccount?: string): Promise<boolean> => {
+          if (!uri.startsWith("shelby://")) {
+            // Not a Shelby URI, assume it exists (e.g., ElevenLabs voices)
+            return true;
+          }
+          
+          try {
+            const { backendApi } = await import("@/lib/api");
+            // Try to download meta.json to verify the voice exists in Shelby
+            await backendApi.downloadFromShelby(uri, "meta.json", requesterAccount);
+            return true;
+          } catch (error) {
+            // File doesn't exist or access denied
+            console.warn(`Voice not accessible in Shelby: ${uri}`, error);
+            return false;
+          }
+        };
+        
+        // Add own voice if user has registered one and it exists in Shelby
         if (ownVoiceMetadata && address) {
-          allVoices.push({
-            voiceId: ownVoiceMetadata.voiceId,
-            name: ownVoiceMetadata.name,
-            modelUri: ownVoiceMetadata.modelUri,
-            owner: ownVoiceMetadata.owner,
-            isOwned: true, // Mark as owned
-          });
+          const exists = await checkShelbyUriExists(ownVoiceMetadata.modelUri, address.toString());
+          if (exists) {
+            allVoices.push({
+              voiceId: ownVoiceMetadata.voiceId,
+              name: ownVoiceMetadata.name,
+              modelUri: ownVoiceMetadata.modelUri,
+              owner: ownVoiceMetadata.owner,
+              isOwned: true, // Mark as owned
+            });
+          } else {
+            console.log(`Own voice ${ownVoiceMetadata.name} not found in Shelby, skipping`);
+          }
         }
         
-        // Add purchased voices
+        // Add purchased voices (validate they exist in Shelby)
         const purchased = getPurchasedVoices();
-        const purchasedVoicesList = purchased.map((v) => ({
-          voiceId: v.voiceId,
-          name: v.name,
-          modelUri: v.modelUri,
-          owner: v.owner,
-          isOwned: false, // Mark as purchased
-        }));
+        const validPurchasedVoices: Array<{ voiceId: string; name: string; modelUri: string; owner: string; isOwned?: boolean }> = [];
+        
+        for (const v of purchased) {
+          const exists = await checkShelbyUriExists(v.modelUri, address?.toString());
+          if (exists) {
+            validPurchasedVoices.push({
+              voiceId: v.voiceId,
+              name: v.name,
+              modelUri: v.modelUri,
+              owner: v.owner,
+              isOwned: false, // Mark as purchased
+            });
+          } else {
+            console.log(`Purchased voice ${v.name} not found in Shelby, removing from list`);
+            // Optionally remove from localStorage if it doesn't exist
+            // But we'll leave it in case it's just temporarily unavailable
+          }
+        }
         
         // Combine owned and purchased (owned first)
-        const combinedVoices = [...allVoices, ...purchasedVoicesList];
+        const combinedVoices = [...allVoices, ...validPurchasedVoices];
         setPurchasedVoices(combinedVoices);
         
         // Set default voice if available and none is selected (prefer owned voice)
+        // Also clear selection if current selection is no longer valid
+        if (selectedPurchasedVoice) {
+          const isStillValid = combinedVoices.some(v => v.modelUri === selectedPurchasedVoice);
+          if (!isStillValid) {
+            setSelectedPurchasedVoice("");
+          }
+        }
+        
         if (combinedVoices.length > 0 && !selectedPurchasedVoice) {
           setSelectedPurchasedVoice(combinedVoices[0].modelUri);
         }
@@ -147,7 +190,7 @@ const Upload = () => {
     window.addEventListener('storage', handleStorageChange);
     
     // Also check periodically for same-tab changes (e.g., after purchase or registration)
-    const interval = setInterval(loadAvailableVoices, 2000);
+    const interval = setInterval(loadAvailableVoices, 5000); // Check every 5 seconds
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
