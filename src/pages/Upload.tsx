@@ -62,6 +62,18 @@ const Upload = () => {
   const cloneMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const cloneAudioChunksRef = useRef<Blob[]>([]);
 
+  // ------------------- Quick Voice Cloning (Voice Typing → Clone → TTS) -------------------
+  const [quickCloneRecording, setQuickCloneRecording] = useState(false);
+  const [quickCloneAudio, setQuickCloneAudio] = useState<File | null>(null);
+  const [quickCloneVoiceText, setQuickCloneVoiceText] = useState(""); // Text to speak with cloned voice
+  const [quickCloneLoading, setQuickCloneLoading] = useState(false);
+  const [quickCloneOutputAudio, setQuickCloneOutputAudio] = useState<string | null>(null);
+  const [quickClonedVoiceId, setQuickClonedVoiceId] = useState<string | null>(null);
+  const quickCloneMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const quickCloneAudioChunksRef = useRef<Blob[]>([]);
+  const [quickCloneIsVoiceTyping, setQuickCloneIsVoiceTyping] = useState(false);
+  const quickCloneSpeechRecognitionRef = useRef<any>(null);
+
   // Load cloned voice on mount
   useEffect(() => {
     const saved = getClonedVoice();
@@ -112,8 +124,8 @@ const Upload = () => {
             return true;
           }
           
-          try {
-            const { backendApi } = await import("@/lib/api");
+      try {
+        const { backendApi } = await import("@/lib/api");
             // Try to download meta.json to verify the voice exists in Shelby
             await backendApi.downloadFromShelby(uri, "meta.json", requesterAccount);
             return true;
@@ -349,11 +361,224 @@ const Upload = () => {
     setIsVoiceTypingCloned(false);
   };
 
+  // ------------------- Quick Voice Cloning Handlers -------------------
+  // Record voice sample for quick cloning
+  const startQuickCloneRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let mimeType = "audio/webm";
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        mimeType = "audio/webm;codecs=opus";
+      } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+        mimeType = "audio/mp4";
+      } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+        mimeType = "audio/webm";
+      }
+      
+      const recorder = new MediaRecorder(stream, { mimeType });
+      quickCloneMediaRecorderRef.current = recorder;
+      quickCloneAudioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          quickCloneAudioChunksRef.current.push(e.data);
+        }
+      };
+      
+      recorder.onstop = () => {
+        const blob = new Blob(quickCloneAudioChunksRef.current, { type: mimeType });
+        const extension = mimeType.includes("webm") ? "webm" : mimeType.includes("mp4") ? "mp4" : "wav";
+        const file = new File([blob], `quick-voice-sample-${Date.now()}.${extension}`, { type: mimeType });
+        setQuickCloneAudio(file);
+      };
+
+      recorder.start(100);
+      setQuickCloneRecording(true);
+      toast.info("Recording voice sample... Speak naturally");
+    } catch (err: any) {
+      console.error("Quick clone recording error:", err);
+      toast.error("Mic permission denied or recording failed");
+    }
+  };
+
+  const stopQuickCloneRecording = () => {
+    if (quickCloneMediaRecorderRef.current) {
+      quickCloneMediaRecorderRef.current.stop();
+      quickCloneMediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+    setQuickCloneRecording(false);
+    toast.success("Voice sample recorded");
+  };
+
+  // Voice typing for quick clone - records audio AND captures transcript simultaneously
+  const startQuickCloneVoiceTyping = async () => {
+    if (!isSpeechRecognitionAvailable()) {
+      toast.error("Voice typing is not supported in your browser. Please use Chrome, Edge, or Safari.");
+      return;
+    }
+
+    // Start audio recording first (for voice cloning)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let mimeType = "audio/webm";
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        mimeType = "audio/webm;codecs=opus";
+      } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+        mimeType = "audio/mp4";
+      } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+        mimeType = "audio/webm";
+      }
+      
+      const recorder = new MediaRecorder(stream, { mimeType });
+      quickCloneMediaRecorderRef.current = recorder;
+      quickCloneAudioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          quickCloneAudioChunksRef.current.push(e.data);
+        }
+      };
+      
+      recorder.onstop = () => {
+        const blob = new Blob(quickCloneAudioChunksRef.current, { type: mimeType });
+        const extension = mimeType.includes("webm") ? "webm" : mimeType.includes("mp4") ? "mp4" : "wav";
+        const file = new File([blob], `quick-voice-sample-${Date.now()}.${extension}`, { type: mimeType });
+        setQuickCloneAudio(file);
+      };
+
+      recorder.start(100);
+      setQuickCloneRecording(true);
+      
+      // Now start speech recognition to capture transcript
+      const recognition = getSpeechRecognition();
+      if (!recognition) {
+        toast.error("Speech recognition not available");
+        recorder.stop();
+        stream.getTracks().forEach(track => track.stop());
+        setQuickCloneRecording(false);
+        return;
+      }
+
+      recognition.continuous = true;
+      recognition.interimResults = false; // Only get final results
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setQuickCloneIsVoiceTyping(true);
+        toast.info("Recording voice sample with voice typing... Speak naturally");
+      };
+
+      recognition.onresult = (event: any) => {
+        // Transcript is captured but not directly used - audio recording is what matters
+        // The transcript helps verify what was said
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript + ' ';
+          }
+        }
+        console.log("[Quick Clone] Captured transcript:", transcript);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Quick clone voice typing error:", event.error);
+        if (event.error === 'not-allowed') {
+          toast.error("Microphone permission denied");
+          stopQuickCloneRecording();
+          setQuickCloneIsVoiceTyping(false);
+        }
+      };
+
+      recognition.onend = () => {
+        setQuickCloneIsVoiceTyping(false);
+        // Stop recording - this will trigger onstop and create the file
+        if (quickCloneRecording && quickCloneMediaRecorderRef.current) {
+          quickCloneMediaRecorderRef.current.stop();
+          quickCloneMediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+          setQuickCloneRecording(false);
+        }
+        toast.success("Voice sample captured! Enter text below to generate speech.");
+      };
+
+      quickCloneSpeechRecognitionRef.current = recognition;
+      recognition.start();
+      
+    } catch (err: any) {
+      console.error("Quick clone voice typing/recording error:", err);
+      toast.error("Failed to start recording. Please check microphone permissions.");
+      setQuickCloneIsVoiceTyping(false);
+      setQuickCloneRecording(false);
+    }
+  };
+
+  const stopQuickCloneVoiceTyping = () => {
+    // Stop speech recognition
+    if (quickCloneSpeechRecognitionRef.current) {
+      quickCloneSpeechRecognitionRef.current.stop();
+      quickCloneSpeechRecognitionRef.current = null;
+    }
+    setQuickCloneIsVoiceTyping(false);
+    
+    // Stop audio recording (this will trigger onstop and create the file)
+    if (quickCloneMediaRecorderRef.current) {
+      quickCloneMediaRecorderRef.current.stop();
+      quickCloneMediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setQuickCloneRecording(false);
+      toast.success("Voice sample captured!");
+    }
+  };
+
+  // Quick clone and generate TTS in one go
+  const handleQuickCloneAndGenerate = async () => {
+    if (!quickCloneAudio) {
+      toast.error("Please record your voice sample first");
+      return;
+    }
+
+    if (!quickCloneVoiceText.trim()) {
+      toast.error("Please enter the text you want your voice to say");
+      return;
+    }
+
+    setQuickCloneLoading(true);
+    try {
+      const { backendApi } = await import("@/lib/api");
+      toast.info("Cloning your voice and generating speech...");
+
+      // Step 1: Clone the voice
+      const autoVoiceName = `Quick Clone - ${Date.now()}`;
+      const cloneResult = await backendApi.cloneVoice(
+        autoVoiceName,
+        quickCloneAudio,
+        undefined // No description needed for quick clone
+      );
+
+      setQuickClonedVoiceId(cloneResult.voice_id);
+
+      // Step 2: Generate TTS with cloned voice
+      toast.info("Voice cloned! Generating speech...");
+      const audioBlob = await backendApi.generateElevenLabsSpeech(
+        cloneResult.voice_id,
+        quickCloneVoiceText.trim()
+      );
+
+      const url = URL.createObjectURL(audioBlob);
+      setQuickCloneOutputAudio(url);
+      toast.success("Done! Your voice is speaking the text you wrote.");
+    } catch (err: any) {
+      console.error("Quick clone and generate error:", err);
+      toast.error(err.message || "Failed to clone voice and generate speech");
+    } finally {
+      setQuickCloneLoading(false);
+    }
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopVoiceTyping();
       stopVoiceTypingCloned();
+      stopQuickCloneVoiceTyping();
     };
   }, []);
 
@@ -539,7 +764,7 @@ const Upload = () => {
       );
       
       // Create object URL for direct playback
-      const url = URL.createObjectURL(audioBlob);
+        const url = URL.createObjectURL(audioBlob);
       setTtsAudioUrlForCloned(url);
       toast.success("Speech generated successfully!");
     } catch (err: any) {
@@ -556,8 +781,8 @@ const Upload = () => {
       toast.error("Please connect your wallet first");
       return;
     }
-
-    if (!selectedFile) {
+          
+          if (!selectedFile) {
       toast.error("Please record or upload an audio file first");
       return;
     }
@@ -656,20 +881,20 @@ const Upload = () => {
                 </div>
               ) : (
                 <>
-                  <div className="space-y-2">
+              <div className="space-y-2">
                     <Label htmlFor="purchased-voice">Select Voice</Label>
                     <Select value={selectedPurchasedVoice} onValueChange={setSelectedPurchasedVoice}>
                       <SelectTrigger id="purchased-voice">
-                        <SelectValue placeholder="Select a voice" />
-                      </SelectTrigger>
-                      <SelectContent>
+                    <SelectValue placeholder="Select a voice" />
+                  </SelectTrigger>
+                  <SelectContent>
                         {purchasedVoices.map((voice) => (
                           <SelectItem key={voice.modelUri} value={voice.modelUri}>
                             {voice.name} {voice.isOwned ? "👤 (Your Voice)" : `(Purchased)`}
-                          </SelectItem>
+                        </SelectItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                  </SelectContent>
+                </Select>
                     {purchasedVoices.find(v => v.modelUri === selectedPurchasedVoice)?.isOwned && (
                       <p className="text-xs text-muted-foreground">
                         ✓ You own this voice - free to use
@@ -700,14 +925,14 @@ const Upload = () => {
                           )}
                         </Button>
                       )}
-                    </div>
-                    <Textarea
+              </div>
+              <Textarea
                       id="tts-text"
-                      value={ttsText}
-                      onChange={(e) => setTtsText(e.target.value)}
+                value={ttsText}
+                onChange={(e) => setTtsText(e.target.value)}
                       placeholder="Type text here or use voice typing to generate speech with your purchased voice..."
-                      className="min-h-[100px]"
-                    />
+                className="min-h-[100px]"
+              />
                     {isVoiceTyping && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <Mic className="h-3 w-3 animate-pulse" />
@@ -728,29 +953,169 @@ const Upload = () => {
                     ) : (
                       <>
                         <Sparkles className="h-5 w-5 mr-2" />
-                        Generate Speech
+                Generate Speech
                       </>
                     )}
+              </Button>
+              {ttsAudioUrl && (
+                <div className="space-y-3 bg-muted/40 p-4 rounded-xl">
+                  <audio controls src={ttsAudioUrl} className="w-full" />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = ttsAudioUrl;
+                      a.download = `voicevault-tts-${Date.now()}.mp3`;
+                      a.click();
+                    }}
+                    className="w-full"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Audio
                   </Button>
-                  {ttsAudioUrl && (
-                    <div className="space-y-3 bg-muted/40 p-4 rounded-xl">
-                      <audio controls src={ttsAudioUrl} className="w-full" />
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          const a = document.createElement("a");
-                          a.href = ttsAudioUrl;
-                          a.download = `voicevault-tts-${Date.now()}.mp3`;
-                          a.click();
-                        }}
-                        className="w-full"
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        Download Audio
-                      </Button>
-                    </div>
+                </div>
                   )}
                 </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ------------------- Quick Voice Cloning (Voice Typing → Clone → TTS) ------------------- */}
+          <Card>
+            <CardHeader>
+              <CardTitle>🎙️ Voice Cloning</CardTitle>
+              <CardDescription>
+                Record your voice sample (or use voice typing), then enter text. We'll clone your voice and generate speech with it reading your text!
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Step 1: Record Voice Sample */}
+              <div className="space-y-4">
+                <Label>Step 1: Record Your Voice Sample</Label>
+                <div className="border-2 border-dashed rounded-lg p-6 text-center space-y-4">
+                  <div className="space-y-2">
+                    {!quickCloneRecording ? (
+                      <Button 
+                        onClick={startQuickCloneRecording} 
+                        className="w-full"
+                        disabled={quickCloneLoading}
+                      >
+                        <Mic2 className="h-5 w-5 mr-2" />
+                        Record Voice Sample
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={stopQuickCloneRecording} 
+                        className="w-full" 
+                        variant="destructive"
+                      >
+                        <Mic2 className="h-5 w-5 mr-2" />
+                        Stop Recording
+                      </Button>
+                    )}
+                    {(quickCloneRecording || quickCloneIsVoiceTyping) && (
+                      <div className="flex items-center justify-center space-x-2 text-red-600 dark:text-red-400">
+                        <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse" />
+                        <span className="text-sm font-medium">
+                          {quickCloneIsVoiceTyping ? "Recording & Voice Typing... Speak naturally" : "Recording... Speak naturally"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="text-sm text-muted-foreground"></div>
+                  
+                  <div>
+                    {isSpeechRecognitionAvailable()
+}
+                    {(quickCloneIsVoiceTyping || quickCloneRecording) && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        We're recording your voice sample. Speak clearly so we can clone your voice.
+                      </p>
+                    )}
+                  </div>
+                  
+                  {quickCloneAudio && (
+                    <div className="space-y-2 pt-2 border-t">
+                      <p className="text-sm text-green-600 dark:text-green-400 font-medium">
+                        ✓ Voice sample ready: {quickCloneAudio.name} ({(quickCloneAudio.size / 1024).toFixed(1)} KB)
+                      </p>
+                      <audio controls src={URL.createObjectURL(quickCloneAudio)} className="w-full" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Step 2: Enter Text */}
+              <div className="space-y-2">
+                <Label htmlFor="quick-clone-text">Step 2: Enter Text for Your Voice to Say</Label>
+                <Textarea
+                  id="quick-clone-text"
+                  value={quickCloneVoiceText}
+                  onChange={(e) => setQuickCloneVoiceText(e.target.value)}
+                  placeholder="Enter the text you want your cloned voice to speak..."
+                  className="min-h-[100px]"
+                  disabled={quickCloneLoading}
+                />
+                <p className="text-xs text-muted-foreground">
+                  This is the text that will be spoken using your cloned voice
+                </p>
+              </div>
+
+              {/* Step 3: Clone and Generate */}
+              <div className="space-y-2">
+                <Label>Step 3: Clone Voice</Label>
+                <Button 
+                  onClick={handleQuickCloneAndGenerate} 
+                  disabled={quickCloneLoading || !quickCloneAudio || !quickCloneVoiceText.trim()} 
+                  className="w-full"
+                >
+                  {quickCloneLoading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Cloning Voice...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-5 w-5 mr-2" />
+                      Clone Voice
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Output */}
+              {quickCloneOutputAudio && (
+                <div className="space-y-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-green-800 dark:text-green-200 mb-1">
+                      ✓ Success! Your voice is speaking the text you wrote
+                    </p>
+                    {quickClonedVoiceId && (
+                      <p className="text-xs text-green-700 dark:text-green-300">
+                        Cloned Voice ID: <code className="text-xs bg-muted px-1 py-0.5 rounded">{quickClonedVoiceId}</code>
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2 pt-2">
+                    <audio controls src={quickCloneOutputAudio} className="w-full" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const a = document.createElement("a");
+                        a.href = quickCloneOutputAudio;
+                        a.download = `my-voice-tts-${Date.now()}.mp3`;
+                        a.click();
+                      }}
+                      className="w-full"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Audio
+                    </Button>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -868,7 +1233,7 @@ const Upload = () => {
                   ) : (
                     <>
                       <Sparkles className="h-5 w-5 mr-2" />
-                      Upload & Clone Voice
+                      Clone Voice
                     </>
                   )}
                 </Button>
