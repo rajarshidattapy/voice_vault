@@ -9,6 +9,7 @@ const navLinks = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/upload", label: "Create Voice" },
+  { href: "/deploy", label: "Deploy" },
 ];
 
 export function Navbar() {
