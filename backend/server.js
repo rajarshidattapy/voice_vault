@@ -35,9 +35,14 @@ app.use((req, res, next) => {
 });
 
 // Multer for file uploads - explicitly configured to handle both files and text fields
+// Multer automatically parses multipart/form-data and:
+// - Puts files in req.file (for single file) or req.files (for multiple files)
+// - Puts text fields in req.body
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  // Ensure text fields are parsed and available in req.body
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit for audio files
+  },
 });
 
 // API Keys
@@ -106,72 +111,107 @@ app.post("/api/elevenlabs/speak", async (req, res) => {
 });
 
 // ==================== ElevenLabs Voice Cloning ====================
-
-// 3️⃣ Clone voice using ElevenLabs
-app.post("/api/elevenlabs/clone", async (req, res) => {
-  try {
-    if (!ELEVEN_KEY) {
-      return res.status(500).json({ error: "ElevenLabs API key not configured" });
-    }
-
-    const { name, files } = req.body;
-    if (!files?.length) return res.status(400).json({ error: "No audio provided" });
-
-    const form = new FormData();
-    form.append("name", name);
-    files.forEach((f, i) => form.append("files", Buffer.from(f.base64, "base64"), `sample${i}.wav`));
-
-    const cloneRes = await fetch("https://api.elevenlabs.io/v1/voices/add", {
-      method: "POST",
-      headers: { "xi-api-key": ELEVEN_KEY },
-      body: form,
-    });
-
-    const text = await cloneRes.text();
-    if (!cloneRes.ok) return res.status(cloneRes.status).send(text);
-
-    const data = JSON.parse(text);
-    res.json({ voice_id: data.voice_id });
-  } catch (err) {
-    res.status(500).json({ error: "Clone failed", message: err.message });
-  }
-});
-
+// NOTE: The old endpoint that expected JSON with base64 files has been removed.
+// The endpoint below handles FormData with file uploads using multer.
 // ==================== ElevenLabs Voice Cloning ====================
 
 // 4️⃣ Clone a voice using ElevenLabs (for fun/testing)
-// Use upload.single() which processes the file and all text fields
-app.post("/api/elevenlabs/clone", upload.single("audio"), async (req, res) => {
+// 
+// EXPLANATION: Why req.body is undefined with FormData:
+// - When using FormData (multipart/form-data), Express's built-in body parsers
+//   (express.json(), express.urlencoded()) do NOT parse the request body
+// - Only multer can parse multipart/form-data and populate req.body with text fields
+// - If multer isn't configured correctly or doesn't run, req.body remains undefined
+// - This causes "Cannot destructure property 'name' of 'req.body' as it is undefined" errors
+//
+// SOLUTION: Use multer.single() middleware which:
+// 1. Parses multipart/form-data
+// 2. Puts the file in req.file
+// 3. Puts text fields in req.body
+//
+// ERROR HANDLING: Multer errors are caught by Express error handler
+// If multer fails, it will call next(err), so we need to handle that
+app.post("/api/elevenlabs/clone", (req, res, next) => {
+  // Apply multer middleware with error handling
+  upload.single("audio")(req, res, (err) => {
+    if (err) {
+      // Multer errors (e.g., file too large, wrong field name)
+      console.error("[Voice Clone] Multer parsing error:", err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ 
+          error: "File too large", 
+          message: "Audio file must be less than 50MB" 
+        });
+      }
+      return res.status(400).json({ 
+        error: "File upload error", 
+        message: err.message || "Failed to parse form data" 
+      });
+    }
+    // Success - multer has populated req.file and req.body
+    next();
+  });
+}, async (req, res) => {
   try {
+    // Debug: Log what multer parsed
+    console.log("[Voice Clone] After multer processing:", {
+      hasFile: !!req.file,
+      fileSize: req.file?.size,
+      fileName: req.file?.originalname,
+      bodyType: typeof req.body,
+      bodyExists: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : [],
+      contentType: req.headers['content-type']
+    });
+
+    // Validate API key
     if (!ELEVEN_KEY) {
       return res.status(500).json({ error: "ElevenLabs API key not configured" });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: "Audio file is required" });
+    // SAFE EXTRACTION: Never destructure directly - always validate first
+    // Step 1: Ensure req.body exists and is an object
+    if (!req.body || typeof req.body !== 'object') {
+      console.warn("[Voice Clone] req.body is not an object, initializing to empty object");
+      req.body = {};
     }
 
-    // Multer puts text fields in req.body
-    // Handle both direct access and bracket notation for safety
-    const name = (req.body && (req.body.name || req.body['name'])) || null;
-    const description = (req.body && (req.body.description || req.body['description'])) || null;
-    
-    if (!name) {
-      const contentType = req.headers['content-type'] || 'not set';
-      console.error("[Voice Clone] Missing name in req.body:", { 
-        body: req.body, 
+    // Step 2: Safely extract fields without destructuring
+    const name = (req.body && typeof req.body === 'object') 
+      ? (req.body.name || req.body['name'] || null)
+      : null;
+    const description = (req.body && typeof req.body === 'object')
+      ? (req.body.description || req.body['description'] || null)
+      : null;
+
+    // Step 3: Validate required fields
+    if (!req.file) {
+      return res.status(400).json({ 
+        error: "Audio file is required",
+        received: {
+          hasFile: false,
+          contentType: req.headers['content-type'] || 'not set'
+        }
+      });
+    }
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      console.error("[Voice Clone] Missing or invalid name:", {
+        body: req.body,
         bodyType: typeof req.body,
-        bodyKeys: req.body ? Object.keys(req.body) : 'req.body is undefined',
-        contentType: contentType,
-        hasFile: !!req.file,
-        fileSize: req.file?.size
+        bodyKeys: req.body ? Object.keys(req.body) : [],
+        contentType: req.headers['content-type'],
+        hasFile: !!req.file
       });
       return res.status(400).json({ 
-        error: "Voice name is required. Please ensure you're sending 'name' field in the form data.",
+        error: "Voice name is required",
+        message: "Please provide a 'name' field in the form data",
         debug: {
-          contentType: contentType,
+          contentType: req.headers['content-type'] || 'not set',
           bodyExists: !!req.body,
-          bodyKeys: req.body ? Object.keys(req.body) : []
+          bodyKeys: req.body ? Object.keys(req.body) : [],
+          hasFile: !!req.file,
+          fileName: req.file?.originalname
         }
       });
     }
@@ -216,7 +256,11 @@ app.post("/api/elevenlabs/clone", upload.single("audio"), async (req, res) => {
     });
   } catch (err) {
     console.error("[Voice Clone] Error:", err);
-    res.status(500).json({ error: "Voice cloning failed", message: err.message });
+    const errorMessage = err?.message || err?.toString() || "Unknown error occurred";
+    res.status(500).json({ 
+      error: "Voice cloning failed", 
+      message: errorMessage
+    });
   }
 });
 
@@ -614,7 +658,30 @@ app.post("/api/shelby/download", async (req, res) => {
     res.set("Content-Type", contentType);
     res.send(fileBuffer);
   } catch (err) {
-    console.error("[API] Shelby download error:", err);
+    console.error("[API] Shelby download error:", {
+      name: err.name,
+      code: err.code,
+      message: err.message,
+      stack: err.stack?.split('\n')[0]
+    });
+    
+    // Check if it's a file not found error (404)
+    const isFileNotFound = 
+      err.name === "FileNotFoundError" || 
+      err.code === "ENOENT" || 
+      (err.message && err.message.toLowerCase().includes("not found")) ||
+      (err.message && err.message.toLowerCase().includes("enoent"));
+    
+    if (isFileNotFound) {
+      console.log("[API] Returning 404 for file not found");
+      return res.status(404).json({ 
+        error: "File not found", 
+        message: err.message || `File ${req.body.filename} not found in ${req.body.uri}` 
+      });
+    }
+    
+    // Other errors return 500
+    console.log("[API] Returning 500 for other error");
     res.status(500).json({ error: "Shelby download failed", message: err.message });
   }
 });

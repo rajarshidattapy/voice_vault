@@ -72,6 +72,17 @@ export async function uploadToShelby(account, namespace, voiceId, bundleFiles) {
 }
 
 /**
+ * Custom error class for file not found errors
+ */
+export class FileNotFoundError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "FileNotFoundError";
+    this.code = "ENOENT";
+  }
+}
+
+/**
  * Download file from Shelby (local file storage for development)
  * 
  * In production, this would download from Shelby RPC.
@@ -96,12 +107,20 @@ export async function downloadFromShelby(uri, filename) {
       return buffer;
     } catch (fileError) {
       if (fileError.code === "ENOENT") {
-        throw new Error(`File not found: ${filename} in ${uri}`);
+        // Throw a custom error that can be identified as 404
+        const notFoundError = new FileNotFoundError(`File not found: ${filename} in ${uri}`);
+        console.log("[Shelby] File not found, throwing FileNotFoundError:", notFoundError.name);
+        throw notFoundError;
       }
       throw fileError;
     }
   } catch (error) {
-    console.error("[Shelby] Download error:", error);
+    // Preserve the error type when re-throwing
+    console.error("[Shelby] Download error:", {
+      name: error.name,
+      code: error.code,
+      message: error.message
+    });
     throw error;
   }
 }

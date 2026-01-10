@@ -78,6 +78,42 @@ export function getPurchasedOpenAIVoices(): PurchasedVoice[] {
 }
 
 /**
+ * Remove a purchased voice by voiceId and owner
+ */
+export function removePurchasedVoice(voiceId: string, owner: string): void {
+  try {
+    const existing = getPurchasedVoices();
+    const filtered = existing.filter(
+      (v) => !(v.voiceId === voiceId && v.owner === owner)
+    );
+    
+    if (filtered.length < existing.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+      console.log("[PurchasedVoices] Removed:", voiceId);
+    }
+  } catch (error) {
+    console.error("Error removing purchased voice:", error);
+  }
+}
+
+/**
+ * Remove a purchased voice by modelUri
+ */
+export function removePurchasedVoiceByUri(modelUri: string): void {
+  try {
+    const existing = getPurchasedVoices();
+    const filtered = existing.filter((v) => v.modelUri !== modelUri);
+    
+    if (filtered.length < existing.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+      console.log("[PurchasedVoices] Removed voice with URI:", modelUri);
+    }
+  } catch (error) {
+    console.error("Error removing purchased voice by URI:", error);
+  }
+}
+
+/**
  * Clear all purchased voices (for testing)
  */
 export function clearPurchasedVoices(): void {

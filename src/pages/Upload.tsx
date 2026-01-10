@@ -11,7 +11,7 @@ import { useState, useRef, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getPurchasedVoices } from "@/lib/purchasedVoices";
+import { getPurchasedVoices, removePurchasedVoiceByUri } from "@/lib/purchasedVoices";
 import { useAptosWallet } from "@/hooks/useAptosWallet";
 import { useVoiceMetadata } from "@/hooks/useVoiceMetadata";
 import { getClonedVoice, addClonedVoice, type ClonedVoice } from "@/lib/clonedVoices";
@@ -167,9 +167,9 @@ const Upload = () => {
               isOwned: false, // Mark as purchased
             });
           } else {
-            console.log(`Purchased voice ${v.name} not found in Shelby, removing from list`);
-            // Optionally remove from localStorage if it doesn't exist
-            // But we'll leave it in case it's just temporarily unavailable
+            console.log(`Purchased voice ${v.name} not found in Shelby, removing from localStorage`);
+            // Remove from localStorage since the voice has been deleted
+            removePurchasedVoiceByUri(v.modelUri);
           }
         }
         
@@ -1030,7 +1030,6 @@ const Upload = () => {
 }
                     {(quickCloneIsVoiceTyping || quickCloneRecording) && (
                       <p className="text-xs text-muted-foreground mt-2">
-                        We're recording your voice sample. Speak clearly so we can clone your voice.
                       </p>
                     )}
                   </div>
