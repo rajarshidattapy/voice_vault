@@ -6,7 +6,7 @@
 Consumers who want to license a voice have no transparent, decentralized marketplace: rights, payments, and usage-tracking are opaque.
 
 ### Prerequisites
-- Node.js 18+ 
+- Next.js 18+ 
 - npm 
 - Aptos wallet
 
