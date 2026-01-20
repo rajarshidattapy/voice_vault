@@ -1,1 +1,7 @@
-{}
+{
+  "/page": "app/page.js",
+  "/upload/page": "app/upload/page.js",
+  "/marketplace/page": "app/marketplace/page.js",
+  "/deploy/page": "app/deploy/page.js",
+  "/dashboard/page": "app/dashboard/page.js"
+}

@@ -16,5 +16,11 @@
     "files": [
       "static/chunks/_pages-dir-browser_node_modules_next_dist_pages__error_js.js"
     ]
+  },
+  "app\\marketplace\\page.tsx -> @/lib/purchasedVoices": {
+    "id": "app\\marketplace\\page.tsx -> @/lib/purchasedVoices",
+    "files": [
+      "static/chunks/_app-pages-browser_src_lib_purchasedVoices_ts.js"
+    ]
   }
 }
