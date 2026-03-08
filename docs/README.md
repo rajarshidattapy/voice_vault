@@ -10,4 +10,11 @@ Consumers who want to license a voice have no transparent, decentralized marketp
 - npm 
 - Aptos wallet
 
-**Built with ❤️ by Vidip, Sahil, Rajarshi and Gautam for the Aptos ecosystem**
+**Built with ❤️ by Rajarshi and Gautam for the Aptos ecosystem**
+
+
+To add:
+
+1) deploy voice agents
+2) integrate x402
+3) Aptos to INR
