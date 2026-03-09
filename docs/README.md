@@ -16,5 +16,10 @@ Consumers who want to license a voice have no transparent, decentralized marketp
 To add:
 
 1) deploy voice agents
+- https://github.com/livekit/livekit
+- https://github.com/ayush-that/bohemia-ai
+
 2) integrate x402
 3) Aptos to INR
+
+
